@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 
@@ -24,8 +25,8 @@ class VoiceService {
   Future<bool> initialize() async {
     if (_initialized) return true;
     _initialized = await _speech.initialize(
-      onError: (e) => print('Speech error: ${e.errorMsg}'),
-      onStatus: (status) => print('Speech status: $status'),
+      onError: (e) => debugPrint('Speech error: ${e.errorMsg}'),
+      onStatus: (status) => debugPrint('Speech status: $status'),
     );
     return _initialized;
   }
@@ -59,9 +60,9 @@ class VoiceService {
           );
         }
       },
-      listenFor: maxDuration,
-      pauseFor: const Duration(seconds: 3),
       listenOptions: stt.SpeechListenOptions(
+        listenFor: maxDuration,
+        pauseFor: const Duration(seconds: 3),
         partialResults: true,
         cancelOnError: true,
       ),

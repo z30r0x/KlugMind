@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.studypilot"
+    namespace = "com.example.klugmind"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
