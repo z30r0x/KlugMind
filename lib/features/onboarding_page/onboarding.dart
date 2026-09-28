@@ -2,9 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
-import 'package:klugmind/core/widgets/theme_button.dart';
-import 'package:klugmind/core/widgets/step_dots.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
+import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/features/notes_page/notes.dart';
 import 'widgets/study_task.dart';
 
@@ -91,7 +90,7 @@ class _HomePageState extends State<OnboardingPage> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() => _selectedDate = picked);
     }
   }
@@ -110,22 +109,12 @@ class _HomePageState extends State<OnboardingPage> {
             Expanded(
               child: CustomScrollView(
                 slivers: [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: const [SizedBox.shrink(), ThemeButton()],
-                      ),
-                    ),
-                  ),
+                  // Step 2 of 2: HomePage (course setup) -> here.
+                  SliverToBoxAdapter(child: PageTopBar(currentStep: 1)),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
-                        // Step 2 of 2: HomePage (course setup) -> here.
-                        const StepDots(currentStep: 1, totalSteps: 2),
-                        const SizedBox(height: 16),
                         _Header(date: _selectedDate, onDateTap: _pickDate),
                         const SizedBox(height: 18),
                         Text('Study blocks',
@@ -219,8 +208,7 @@ class _Header extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(_formatted,
-                          style:
-                              Fonts.sub.copyWith(color: AppColors.textDim)),
+                          style: Fonts.sub.copyWith(color: AppColors.textDim)),
                       const SizedBox(width: 4),
                       Icon(Icons.edit_calendar_outlined,
                           size: 14, color: AppColors.textDim),
@@ -415,7 +403,6 @@ class _BehindButton extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: () {
           // TODO: wire to re-planning route (screen-replan).
-          // Navigator.of(context).pushNamed('/replan');
         },
         icon: const Icon(Icons.warning_amber_rounded, size: 16),
         label: const Text('I fell behind — rebuild my week',

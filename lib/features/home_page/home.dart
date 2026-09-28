@@ -1,10 +1,10 @@
-// lib/features/setup_page/home_page.dart
+// lib/features/home_page/home.dart
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
-import 'package:klugmind/core/widgets/step_dots.dart';
+import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/features/onboarding_page/onboarding.dart';
 
 class Course {
@@ -57,63 +57,72 @@ class _HomePageState extends State<HomePage> {
     setState(() => _courses.removeWhere((c) => c.id == id));
   }
 
-  Future<String?> _promptCourseName(BuildContext context) {
+  Future<String?> _promptCourseName(BuildContext context) async {
     final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add a course'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Course name'),
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Add a course'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Course name'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(controller.text),
+                child: const Text('Add')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: const Text('Add')),
-        ],
-      ),
-    );
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _openPasteTextCard() async {
     final controller = TextEditingController(text: _pastedSyllabusText ?? '');
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Paste syllabus text'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLines: 10,
-            minLines: 5,
-            decoration: const InputDecoration(
-              hintText: 'Paste or type your syllabus text here…',
-              border: OutlineInputBorder(),
+    String? result;
+    try {
+      result = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Paste syllabus text'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 10,
+              minLines: 5,
+              decoration: const InputDecoration(
+                hintText: 'Paste or type your syllabus text here…',
+                border: OutlineInputBorder(),
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text),
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      controller.dispose();
+    }
     if (!mounted) return;
     if (result == null || result.trim().isEmpty) return;
     setState(() {
-      _pastedSyllabusText = result.trim();
+      _pastedSyllabusText = result!.trim();
       _uploadedFile = null;
       _capturedPhoto = null;
     });
@@ -135,7 +144,7 @@ class _HomePageState extends State<HomePage> {
         _pastedSyllabusText = null;
         _capturedPhoto = null;
       });
-      // TODO: route PDF -> pdf-text-extraction, image -> OcrService.extractFromImage.
+      // TODO: route PDF -> StudyIntakeService.fromPdf, image -> fromPhoto.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -158,7 +167,7 @@ class _HomePageState extends State<HomePage> {
         _pastedSyllabusText = null;
         _uploadedFile = null;
       });
-      // TODO: OcrService.extractFromImage(File(photo.path)).
+      // TODO: StudyIntakeService.fromPhoto(File(photo.path)).
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -174,10 +183,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   String? get _syllabusStatusLabel {
-    if (_pastedSyllabusText != null) {
-      final preview = _pastedSyllabusText!.length > 40
-          ? '${_pastedSyllabusText!.substring(0, 40)}…'
-          : _pastedSyllabusText;
+    final pasted = _pastedSyllabusText;
+    if (pasted != null) {
+      final preview =
+          pasted.length > 40 ? '${pasted.substring(0, 40)}…' : pasted;
       return 'Pasted text saved: "$preview"';
     }
     if (_uploadedFile != null) return 'File selected: ${_uploadedFile!.name}';
@@ -188,21 +197,21 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     AppColors.sync(context);
+    final status = _syllabusStatusLabel;
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
       body: SafeArea(
         child: Column(
           children: [
+            // Step 1 of 2: Home (course setup) -> Today's Plan.
+            PageTopBar(currentStep: 0),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Step 1 of 2: Home (course setup) -> Today's Plan.
-                    const StepDots(currentStep: 0, totalSteps: 2),
-                    const SizedBox(height: 20),
                     Text('Set up Klugmind',
                         style: Fonts.h1Lg.copyWith(color: AppColors.textMain)),
                     const SizedBox(height: 6),
@@ -257,7 +266,7 @@ class _HomePageState extends State<HomePage> {
                       subtitle: 'Snap your printed syllabus',
                       onTap: _openCamera,
                     ),
-                    if (_syllabusStatusLabel != null) ...[
+                    if (status != null) ...[
                       const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -272,7 +281,7 @@ class _HomePageState extends State<HomePage> {
                                 size: 16, color: AppColors.primary),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(_syllabusStatusLabel!,
+                              child: Text(status,
                                   style: TextStyle(
                                       fontSize: 12,
                                       color: AppColors.onPrimaryContainer)),
@@ -352,8 +361,7 @@ class _CourseChip extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
               child: Padding(
                 padding: const EdgeInsets.all(2),
-                child:
-                    Icon(Icons.close, size: 16, color: AppColors.textFaint),
+                child: Icon(Icons.close, size: 16, color: AppColors.textFaint),
               ),
             ),
           ),

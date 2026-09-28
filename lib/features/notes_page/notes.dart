@@ -1,21 +1,36 @@
 // lib/features/notes_page/notes.dart
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:klugmind/core/models/material_models.dart';
+import 'package:klugmind/core/services/llm_service.dart' as llm;
+import 'package:klugmind/core/services/study_intake_service.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
+import 'package:klugmind/core/widgets/page_top_bar.dart';
+import 'package:klugmind/features/flashcards_page/flashcards.dart';
 
-/// "Notes → Flashcards & Quiz" screen (prototype: #screen-notes).
-/// Paste notes / upload a file, tap Generate, review the preview, then
-/// "Save & Start Studying".
+/// Notes → Flashcards & Quiz. Typed text, camera photo (OCR) or device PDF
+/// -> StudyIntakeService -> local LLM -> preview -> FlashcardsPage.
 class NotesPage extends StatefulWidget {
-  const NotesPage({super.key, this.onSaveAndStudy, this.onGenerate});
+  const NotesPage({
+    super.key,
+    this.service,
+    this.capturePhoto,
+    this.pickPdf,
+    this.onSaveAndStudy,
+    this.courseName = 'My Notes',
+  });
 
-  /// "Save & Start Studying" tap (prototype: goTo('study')).
+  final StudyIntakeService? service;
+  final Future<File?> Function()? capturePhoto;
+  final Future<String?> Function()? pickPdf;
   final VoidCallback? onSaveAndStudy;
-
-  /// Optional real generation hook; receives the notes text. When null the
-  /// prototype's 1-second fake delay is used.
-  final Future<void> Function(String notes)? onGenerate;
+  final String courseName;
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -23,27 +38,134 @@ class NotesPage extends StatefulWidget {
 
 class _NotesPageState extends State<NotesPage> {
   final _controller = TextEditingController();
+  late final StudyIntakeService _service =
+      widget.service ?? StudyIntakeService();
+  RawMaterial? _raw;
+  StructuredExtraction? _result;
   bool _loading = false;
-  bool _showPreview = false;
+  bool _lowConfidence = false;
 
   @override
   void dispose() {
     _controller.dispose();
+    if (widget.service == null) _service.dispose();
     super.dispose();
   }
 
-  Future<void> _generate() async {
-    setState(() => _loading = true);
-    if (widget.onGenerate != null) {
-      await widget.onGenerate!(_controller.text);
-    } else {
-      await Future<void>.delayed(const Duration(seconds: 1));
-    }
+  Future<File?> _defaultCapture() async {
+    final x = await ImagePicker()
+        .pickImage(source: ImageSource.camera, imageQuality: 90);
+    return x == null ? null : File(x.path);
+  }
+
+  Future<String?> _defaultPickPdf() async {
+    final r = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf'],
+      withData: false,
+    );
+    return r?.files.single.path;
+  }
+
+  void _toast(String msg) {
     if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  String _friendly(Object e) {
+    if (e is llm.HttpException ||
+        e is TimeoutException ||
+        e is SocketException) {
+      return "Couldn't reach the study model. Is Ollama running?";
+    }
+    if (e is FormatException) return e.message;
+    return 'Something went wrong. Please try again.';
+  }
+
+  void _applyRaw(RawMaterial raw) {
     setState(() {
-      _loading = false;
-      _showPreview = true;
+      _raw = raw;
+      _result = null;
+      _lowConfidence = raw.confidence < 0.5;
+      _controller.text = raw.extractedText;
     });
+  }
+
+  Future<void> _onPdf() async {
+    if (_loading) return;
+    try {
+      final path = await (widget.pickPdf ?? _defaultPickPdf)();
+      if (path == null) return;
+      final raw = await _service.fromPdf(path);
+      if (!mounted) return;
+      _applyRaw(raw);
+    } catch (e) {
+      _toast(_friendly(e));
+    }
+  }
+
+  Future<void> _onPhoto() async {
+    if (_loading) return;
+    try {
+      final file = await (widget.capturePhoto ?? _defaultCapture)();
+      if (file == null) return;
+      final raw = await _service.fromPhoto(file);
+      if (!mounted) return;
+      _applyRaw(raw);
+    } catch (e) {
+      _toast(_friendly(e));
+    }
+  }
+
+  Future<void> _generate() async {
+    if (_loading) return;
+    final text = _controller.text.trim();
+    if (text.isEmpty) {
+      _toast('Add notes, a PDF, or a photo first.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _result = null;
+    });
+    try {
+      final base = _raw ??
+          RawMaterial(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            source: MaterialSource.typedText,
+            extractedText: text,
+            confidence: 1.0,
+            capturedAt: DateTime.now(),
+          );
+      final result = await _service.analyze(base.copyWith(extractedText: text));
+      if (!mounted) return;
+      if (result.flashcards.isEmpty) {
+        setState(() => _loading = false);
+        _toast("Couldn't make cards from that. Edit the text and try again.");
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _result = result;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _toast(_friendly(e));
+    }
+  }
+
+  void _saveAndStudy() {
+    final r = _result;
+    if (r == null) return;
+    // TODO: persist deck (Hive/Supabase) before navigating.
+    widget.onSaveAndStudy?.call();
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) =>
+          FlashcardsPage(cards: r.flashcards, courseName: widget.courseName),
+    ));
   }
 
   void _onNavSelect(AppTab tab) {
@@ -61,32 +183,29 @@ class _NotesPageState extends State<NotesPage> {
   @override
   Widget build(BuildContext context) {
     AppColors.sync(context);
+    final result = _result;
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
       body: SafeArea(
         child: Column(
           children: [
-            // .back-row
+            PageTopBar(currentStep: 1),
             InkWell(
               onTap: () => Navigator.of(context).maybePop(),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    '← Back to plan',
-                    style: Fonts.sectionLabel.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textDim,
-                    ),
-                  ),
+                  child: Text('← Back to plan',
+                      style: Fonts.sectionLabel.copyWith(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textDim,
+                      )),
                 ),
               ),
             ),
-
-            // .scroll-area (padding: 0 24px 20px)
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
@@ -101,27 +220,23 @@ class _NotesPageState extends State<NotesPage> {
                       style: Fonts.sub.copyWith(color: AppColors.textDim),
                     ),
                     const SizedBox(height: 16),
-
-                    // textarea.notes-input
                     TextField(
                       controller: _controller,
                       minLines: 6,
                       maxLines: null,
+                      maxLength: StudyIntakeService.maxChars,
                       keyboardType: TextInputType.multiline,
                       cursorColor: AppColors.primary,
-                      style: Fonts.sub.copyWith(
-                        height: 1.3,
-                        color: AppColors.textMain,
-                      ),
+                      style: Fonts.sub
+                          .copyWith(height: 1.3, color: AppColors.textMain),
                       decoration: InputDecoration(
                         hintText:
-                            'Paste your notes here, or drag a PDF / photo of your notes into this box…',
-                        hintStyle: Fonts.sub.copyWith(
-                          height: 1.3,
-                          color: AppColors.textFaint,
-                        ),
+                            'Paste your notes here, or upload a PDF / take a photo of your notes…',
+                        hintStyle: Fonts.sub
+                            .copyWith(height: 1.3, color: AppColors.textFaint),
                         filled: true,
                         fillColor: AppColors.bgSurface,
+                        counterText: '',
                         contentPadding: const EdgeInsets.all(14),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -133,47 +248,57 @@ class _NotesPageState extends State<NotesPage> {
                         ),
                       ),
                     ),
+                    if (_lowConfidence) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: AppColors.priorityHigh),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Low-confidence scan — check the text for OCR mistakes.',
+                              style: Fonts.caption
+                                  .copyWith(color: AppColors.priorityHigh),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 12),
-
-                    // .upload-row
                     Row(
                       children: [
                         Expanded(
                             child: _UploadButton(
-                                label: 'Upload PDF', onTap: () {})),
+                                label: 'Upload PDF', onTap: _onPdf)),
                         const SizedBox(width: 10),
                         Expanded(
                             child: _UploadButton(
-                                label: 'Take photo', onTap: () {})),
+                                label: 'Take photo', onTap: _onPhoto)),
                       ],
                     ),
                     const SizedBox(height: 14),
-
                     _GenerateButton(loading: _loading, onTap: _generate),
-
-                    // .preview-wrap
-                    if (_showPreview) ...[
-                      const SizedBox(height: 6),
+                    if (result != null) ...[
                       Padding(
-                        padding: const EdgeInsets.only(top: 18, bottom: 10),
+                        padding: const EdgeInsets.only(top: 24, bottom: 10),
                         child: Text('Preview — edit before saving',
                             style: Fonts.sectionLabel
                                 .copyWith(color: AppColors.textDim)),
                       ),
-                      const _FlashPreview(),
+                      _FlashPreview(
+                          card: result.flashcards.first,
+                          total: result.flashcards.length),
                       const SizedBox(height: 12),
-                      const _QuizRow(),
+                      _QuizRow(count: result.quizItems.length),
                       const SizedBox(height: 16),
                       _SuccessButton(
-                        label: 'Save & Start Studying',
-                        onTap: widget.onSaveAndStudy,
-                      ),
+                          label: 'Save & Start Studying', onTap: _saveAndStudy),
                     ],
                   ],
                 ),
               ),
             ),
-
             AppBottomNav(active: AppTab.notes, onSelect: _onNavSelect),
           ],
         ),
@@ -181,10 +306,6 @@ class _NotesPageState extends State<NotesPage> {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Pieces
-// ---------------------------------------------------------------------------
 
 class _UploadButton extends StatelessWidget {
   const _UploadButton({required this.label, required this.onTap});
@@ -262,7 +383,9 @@ class _GenerateButton extends StatelessWidget {
 }
 
 class _FlashPreview extends StatelessWidget {
-  const _FlashPreview();
+  const _FlashPreview({required this.card, required this.total});
+  final GeneratedFlashcard card;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
@@ -278,18 +401,15 @@ class _FlashPreview extends StatelessWidget {
         children: [
           Opacity(
             opacity: .75,
-            child: Text('FLASHCARD 1 OF 10',
-                style: Fonts.chip
-                    .copyWith(fontSize: 11, color: AppColors.onPrimaryContainer)),
+            child: Text('FLASHCARD 1 OF $total',
+                style: Fonts.chip.copyWith(
+                    fontSize: 11, color: AppColors.onPrimaryContainer)),
           ),
           const SizedBox(height: 8),
           Text(
-            'What does SN2 stand for and what determines its rate?',
+            card.question,
             style: Fonts.bodyBold.copyWith(
-              fontSize: 15,
-              height: 1.4,
-              color: AppColors.onPrimaryContainer,
-            ),
+                fontSize: 15, height: 1.4, color: AppColors.onPrimaryContainer),
           ),
         ],
       ),
@@ -298,7 +418,8 @@ class _FlashPreview extends StatelessWidget {
 }
 
 class _QuizRow extends StatelessWidget {
-  const _QuizRow();
+  const _QuizRow({required this.count});
+  final int count;
 
   @override
   Widget build(BuildContext context) {
@@ -323,17 +444,9 @@ class _QuizRow extends StatelessWidget {
             child: const Text('📝', style: TextStyle(fontSize: 16)),
           ),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('5-question quiz ready',
-                  style: Fonts.bodyBold
-                      .copyWith(fontSize: 14, color: AppColors.textMain)),
-              const SizedBox(height: 1),
-              Text('Covers reaction mechanisms',
-                  style: Fonts.caption.copyWith(color: AppColors.textFaint)),
-            ],
-          ),
+          Text('$count-question quiz ready',
+              style: Fonts.bodyBold
+                  .copyWith(fontSize: 14, color: AppColors.textMain)),
         ],
       ),
     );
@@ -341,9 +454,9 @@ class _QuizRow extends StatelessWidget {
 }
 
 class _SuccessButton extends StatelessWidget {
-  const _SuccessButton({required this.label, this.onTap});
+  const _SuccessButton({required this.label, required this.onTap});
   final String label;
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {

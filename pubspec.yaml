@@ -23,6 +23,7 @@ dependencies:
   image_picker: ^1.1.2
   file_picker: ^10.3.0
   flutter_dotenv: ^5.2.1
+  syncfusion_flutter_pdf: ^33.2.13
 
 dev_dependencies:
   flutter_test:
