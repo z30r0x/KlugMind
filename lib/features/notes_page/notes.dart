@@ -24,6 +24,7 @@ class NotesPage extends StatefulWidget {
     this.pickPdf,
     this.onSaveAndStudy,
     this.courseName = 'My Notes',
+    this.initialRaw,
   });
 
   final StudyIntakeService? service;
@@ -31,6 +32,9 @@ class NotesPage extends StatefulWidget {
   final Future<String?> Function()? pickPdf;
   final VoidCallback? onSaveAndStudy;
   final String courseName;
+
+  /// Text already extracted elsewhere (e.g. the home page).
+  final RawMaterial? initialRaw;
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -45,6 +49,17 @@ class _NotesPageState extends State<NotesPage> {
   bool _loading = false;
   bool _lowConfidence = false;
   int? _downloadPct;
+
+  @override
+  void initState() {
+    super.initState();
+    final r = widget.initialRaw;
+    if (r != null) {
+      _raw = r;
+      _controller.text = r.extractedText;
+      _lowConfidence = r.confidence < 0.5;
+    }
+  }
 
   @override
   void dispose() {
@@ -104,6 +119,7 @@ class _NotesPageState extends State<NotesPage> {
       if (!mounted) return;
       _applyRaw(raw);
     } catch (e) {
+      debugPrint('pdf failed: $e');
       _toast(_friendly(e));
     }
   }
@@ -117,6 +133,7 @@ class _NotesPageState extends State<NotesPage> {
       if (!mounted) return;
       _applyRaw(raw);
     } catch (e) {
+      debugPrint('photo failed: $e');
       _toast(_friendly(e));
     }
   }
@@ -159,6 +176,7 @@ class _NotesPageState extends State<NotesPage> {
         _result = result;
       });
     } catch (e) {
+      debugPrint('generate failed: $e');
       if (!mounted) return;
       setState(() {
         _loading = false;

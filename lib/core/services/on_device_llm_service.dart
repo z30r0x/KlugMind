@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 
 import 'llm_service.dart';
@@ -9,12 +10,30 @@ class OnDeviceLlmService extends LlmService {
 
   final String modelUrl;
   InferenceModel? _model;
+  Future<void>? _ready;
 
   /// Downloads the model once (cached by the plugin). [onProgress] is 0-100.
+  /// Concurrent callers share one initialisation; failures can be retried.
   Future<void> ensureReady({void Function(int percent)? onProgress}) async {
-    if (_model != null) return;
+    final f = _ready ??= _init(onProgress);
     try {
-      if (!FlutterGemma.hasActiveModel()) {
+      await f;
+    } catch (_) {
+      _ready = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _init(void Function(int percent)? onProgress) async {
+    if (_model != null) return;
+    if (!modelUrl.startsWith('https://')) {
+      throw const FormatException(
+          'MODEL_URL is missing or invalid in .env (must start with https://).');
+    }
+    try {
+      // Future.value works whether hasActiveModel is sync or async.
+      final has = await Future.value(FlutterGemma.hasActiveModel());
+      if (!has) {
         await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
             .fromNetwork(modelUrl)
             .withProgress((p) => onProgress?.call(p))
@@ -22,6 +41,7 @@ class OnDeviceLlmService extends LlmService {
       }
       _model = await FlutterGemma.getActiveModel(maxTokens: 3072);
     } catch (e) {
+      debugPrint('OnDeviceLlmService init failed: $e');
       throw HttpException(
           'On-device model unavailable (download failed or device too weak): $e');
     }
@@ -40,5 +60,9 @@ class OnDeviceLlmService extends LlmService {
     }
   }
 
-  Future<void> dispose() async => _model?.close();
+  Future<void> dispose() async {
+    await _model?.close();
+    _model = null;
+    _ready = null;
+  }
 }

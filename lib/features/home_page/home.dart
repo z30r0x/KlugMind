@@ -1,10 +1,15 @@
 // lib/features/home_page/home.dart
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:klugmind/core/models/material_models.dart';
+import 'package:klugmind/core/services/study_intake_service.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
+import 'package:klugmind/features/notes_page/notes.dart';
 import 'package:klugmind/features/onboarding_page/onboarding.dart';
 
 class Course {
@@ -39,6 +44,38 @@ class _HomePageState extends State<HomePage> {
   String? _pastedSyllabusText;
   PlatformFile? _uploadedFile;
   XFile? _capturedPhoto;
+
+  // Lazy: no platform channels are touched until a PDF/photo is read.
+  final _intake = StudyIntakeService();
+  RawMaterial? _raw;
+  bool _extracting = false;
+  int _job = 0; // guards against out-of-order async results
+
+  @override
+  void dispose() {
+    _intake.dispose();
+    super.dispose();
+  }
+
+  /// Runs PDF text extraction / OCR and stores the result in [_raw].
+  Future<void> _extract(Future<RawMaterial> Function() work) async {
+    final job = ++_job;
+    setState(() => _extracting = true);
+    try {
+      final raw = await work();
+      if (!mounted || job != _job) return;
+      setState(() {
+        _raw = raw;
+        _extracting = false;
+      });
+    } catch (e) {
+      if (!mounted || job != _job) return;
+      setState(() => _extracting = false);
+      final msg =
+          e is FormatException ? e.message : 'Could not read that file.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
 
   Future<void> _addCourse() async {
     final name = await _promptCourseName(context);
@@ -121,13 +158,21 @@ class _HomePageState extends State<HomePage> {
     }
     if (!mounted) return;
     if (result == null || result.trim().isEmpty) return;
+    final text = result.trim();
+    _job++; // cancel any in-flight extraction
     setState(() {
-      _pastedSyllabusText = result!.trim();
+      _pastedSyllabusText = text;
       _uploadedFile = null;
       _capturedPhoto = null;
+      _extracting = false;
+      _raw = RawMaterial(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        source: MaterialSource.typedText,
+        extractedText: StudyIntakeService.sanitize(text),
+        confidence: 1.0,
+        capturedAt: DateTime.now(),
+      );
     });
-    // TODO: hand off to MaterialAnalysisService.restructureEditedText /
-    // structureMaterial once a courseId + navigation target is decided.
   }
 
   Future<void> _openFilePicker() async {
@@ -139,12 +184,18 @@ class _HomePageState extends State<HomePage> {
       );
       if (!mounted) return;
       if (result == null || result.files.isEmpty) return;
+      final file = result.files.single;
       setState(() {
-        _uploadedFile = result.files.single;
+        _uploadedFile = file;
         _pastedSyllabusText = null;
         _capturedPhoto = null;
+        _raw = null;
       });
-      // TODO: route PDF -> StudyIntakeService.fromPdf, image -> fromPhoto.
+      final path = file.path;
+      if (path == null) return;
+      _extract(() => path.toLowerCase().endsWith('.pdf')
+          ? _intake.fromPdf(path)
+          : _intake.fromPhoto(File(path)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -166,14 +217,23 @@ class _HomePageState extends State<HomePage> {
         _capturedPhoto = photo;
         _pastedSyllabusText = null;
         _uploadedFile = null;
+        _raw = null;
       });
-      // TODO: StudyIntakeService.fromPhoto(File(photo.path)).
+      _extract(() => _intake.fromPhoto(File(photo.path)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not open camera: $e')),
       );
     }
+  }
+
+  void _generateFlashcards() {
+    final raw = _raw;
+    if (raw == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => NotesPage(initialRaw: raw)),
+    );
   }
 
   void _continue() {
@@ -289,6 +349,18 @@ class _HomePageState extends State<HomePage> {
                           ],
                         ),
                       ),
+                      if (_extracting || _raw != null) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: _extracting ? null : _generateFlashcards,
+                            child: Text(_extracting
+                                ? 'Reading text…'
+                                : '✨ Generate flashcards'),
+                          ),
+                        ),
+                      ],
                     ],
                   ],
                 ),
