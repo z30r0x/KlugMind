@@ -1,5 +1,5 @@
 name: klugmind
-description: "A new Flutter project."
+description: "AI study planner and active recall engine."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -29,6 +29,22 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+# Generates launcher icons for Android, iOS and web.
+# Run: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/images/klugmind_logo.png"
+  adaptive_icon_background: "#F6F7FB"
+  adaptive_icon_foreground: "assets/images/klugmind_logo.png"
+  web:
+    generate: true
+    image_path: "assets/images/klugmind_logo.png"
+    background_color: "#F6F7FB"
+    theme_color: "#3B5BFD"
 
 flutter:
   uses-material-design: true
@@ -38,3 +54,20 @@ flutter:
   assets:
     - .env
     - assets/images/
+
+  # Required for Fonts.family = 'Inter' to resolve (see fonts.dart).
+  # Remove this block if you haven't added the Inter .ttf files yet,
+  # otherwise the build will fail on missing assets.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.ttf
+          weight: 800

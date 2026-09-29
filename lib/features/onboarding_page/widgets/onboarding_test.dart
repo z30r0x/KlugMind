@@ -1,6 +1,7 @@
 // test/onboarding_page_test.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:klugmind/features/flashcards_page/flashcards.dart';
 import 'package:klugmind/features/notes_page/notes.dart';
 import 'package:klugmind/features/onboarding_page/onboarding.dart';
 
@@ -79,11 +80,12 @@ void main() {
     expect(find.byType(DatePickerDialog), findsOneWidget);
   });
 
-  testWidgets('renders bottom nav with 3 destinations and no Calendar',
+  testWidgets('renders bottom nav with 4 destinations and no Calendar',
       (tester) async {
     await tester.pumpWidget(wrap());
     expect(find.text('Today'), findsOneWidget);
     expect(find.text('Notes'), findsOneWidget);
+    expect(find.text('Flashcards'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
     expect(find.text('Calendar'), findsNothing);
   });
@@ -94,6 +96,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(NotesPage), findsOneWidget);
     expect(find.text('Notes → Flashcards & Quiz'), findsOneWidget);
+  });
+
+  testWidgets('tapping Flashcards in the navbar opens FlashcardsPage',
+      (tester) async {
+    await tester.pumpWidget(wrap());
+    await tester.tap(find.text('Flashcards'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FlashcardsPage), findsOneWidget);
+    // No deck has been saved yet, so the empty state shows.
+    expect(find.text('No cards to study'), findsOneWidget);
   });
 
   testWidgets('renders the "I fell behind" CTA and no Focus Mode button',

@@ -4,7 +4,6 @@ import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
-import 'package:klugmind/features/notes_page/notes.dart';
 import 'widgets/study_task.dart';
 
 /// "Today's Plan" home screen -- header (with editable date) + streak
@@ -69,20 +68,6 @@ class _HomePageState extends State<OnboardingPage> {
     });
   }
 
-  void _onNavSelect(AppTab tab) {
-    switch (tab) {
-      case AppTab.today:
-        return;
-      case AppTab.notes:
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const NotesPage()),
-        );
-      case AppTab.profile:
-        // TODO: navigate to Profile once that page exists.
-        return;
-    }
-  }
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -103,6 +88,8 @@ class _HomePageState extends State<OnboardingPage> {
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
+      // Keep the navbar pinned to the bottom if a text field is added later.
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [
@@ -138,7 +125,7 @@ class _HomePageState extends State<OnboardingPage> {
               ),
             ),
             // Non-const on purpose -- see AppBottomNav's doc comment.
-            AppBottomNav(active: AppTab.today, onSelect: _onNavSelect),
+            AppBottomNav(active: AppTab.today),
           ],
         ),
       ),

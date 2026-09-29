@@ -8,15 +8,22 @@ const _cards = [
   GeneratedFlashcard(question: 'Q2?', answer: 'A2', difficulty: 'hard'),
 ];
 
-Widget wrap({List<GeneratedFlashcard> cards = _cards, ValueChanged<List<CardRating>>? onFinished}) =>
+Widget wrap({
+  List<GeneratedFlashcard> cards = _cards,
+  ValueChanged<List<CardRating>>? onFinished,
+}) =>
     MaterialApp(
       home: FlashcardsPage(
-          cards: cards, courseName: 'Organic Chemistry II', onFinished: onFinished),
+        cards: cards,
+        courseName: 'Organic Chemistry II',
+        onFinished: onFinished,
+      ),
     );
 
 VoidCallback? _tapOf(WidgetTester t, String label) => t
-    .widget<InkWell>(find.ancestor(
-        of: find.text(label), matching: find.byType(InkWell)).first)
+    .widget<InkWell>(find
+        .ancestor(of: find.text(label), matching: find.byType(InkWell))
+        .first)
     .onTap;
 
 void main() {
@@ -59,5 +66,13 @@ void main() {
   testWidgets('empty deck shows empty state', (t) async {
     await t.pumpWidget(wrap(cards: const []));
     expect(find.text('No cards to study'), findsOneWidget);
+  });
+
+  testWidgets('shows the bottom nav with the Flashcards tab', (t) async {
+    await t.pumpWidget(wrap());
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Notes'), findsOneWidget);
+    expect(find.text('Flashcards'), findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
   });
 }

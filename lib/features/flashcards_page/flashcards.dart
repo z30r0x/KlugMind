@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:klugmind/core/models/material_models.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
+import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 
 enum CardRating { again, good, easy }
 
@@ -16,6 +17,11 @@ class FlashcardsPage extends StatefulWidget {
     this.onFinished,
     this.streak = 12,
   });
+
+  /// In-memory "current deck" until real persistence (Hive/Supabase) lands.
+  /// Notes fills these on "Save & Start Studying"; the navbar reads them.
+  static List<GeneratedFlashcard> lastDeck = const [];
+  static String lastCourse = 'My Notes';
 
   final List<GeneratedFlashcard> cards;
   final String courseName;
@@ -71,6 +77,7 @@ class _FlashcardsPageState extends State<FlashcardsPage> {
     final card = cards[_index];
     return Scaffold(
       backgroundColor: AppColors.bgApp,
+      bottomNavigationBar: AppBottomNav(active: AppTab.flashcards),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
@@ -232,6 +239,7 @@ class _Message extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgApp,
+      bottomNavigationBar: AppBottomNav(active: AppTab.flashcards),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),

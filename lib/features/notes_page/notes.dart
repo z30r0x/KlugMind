@@ -160,6 +160,8 @@ class _NotesPageState extends State<NotesPage> {
   void _saveAndStudy() {
     final r = _result;
     if (r == null) return;
+    FlashcardsPage.lastDeck = r.flashcards;
+    FlashcardsPage.lastCourse = widget.courseName;
     // TODO: persist deck (Hive/Supabase) before navigating.
     widget.onSaveAndStudy?.call();
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -168,25 +170,16 @@ class _NotesPageState extends State<NotesPage> {
     ));
   }
 
-  void _onNavSelect(AppTab tab) {
-    switch (tab) {
-      case AppTab.today:
-        Navigator.of(context).maybePop();
-      case AppTab.notes:
-        return;
-      case AppTab.profile:
-        // TODO: navigate to Profile once that page exists.
-        return;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     AppColors.sync(context);
     final result = _result;
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
+      // Keep the navbar pinned to the bottom; the keyboard overlays it.
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [
@@ -208,7 +201,7 @@ class _NotesPageState extends State<NotesPage> {
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                padding: EdgeInsets.fromLTRB(24, 0, 24, 20 + keyboard),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -299,7 +292,7 @@ class _NotesPageState extends State<NotesPage> {
                 ),
               ),
             ),
-            AppBottomNav(active: AppTab.notes, onSelect: _onNavSelect),
+            AppBottomNav(active: AppTab.notes),
           ],
         ),
       ),

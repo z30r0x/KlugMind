@@ -153,11 +153,35 @@ void main() {
     expect(find.byType(PageTopBar), findsNothing);
   });
 
-  testWidgets('bottom nav has Today/Notes/Profile and no Calendar',
+  testWidgets('Save & Start Studying stores the deck for the Flashcards tab',
+      (t) async {
+    FlashcardsPage.lastDeck = const [];
+    await t.pumpWidget(wrap());
+    await t.enterText(find.byType(TextField), 'notes');
+    await t.tap(find.text('✨ Generate Flashcards + Quiz'));
+    await t.pumpAndSettle();
+    await t.ensureVisible(find.text('Save & Start Studying'));
+    await t.tap(find.text('Save & Start Studying'));
+    await t.pumpAndSettle();
+    expect(FlashcardsPage.lastDeck.length, 2);
+    expect(FlashcardsPage.lastCourse, 'My Notes');
+  });
+
+  testWidgets('tapping Flashcards in the navbar opens FlashcardsPage',
+      (t) async {
+    await t.pumpWidget(wrap());
+    await t.tap(find.text('Flashcards'));
+    await t.pumpAndSettle();
+    expect(find.byType(FlashcardsPage), findsOneWidget);
+  });
+
+  testWidgets(
+      'bottom nav has Today/Notes/Flashcards/Profile and no Calendar',
       (t) async {
     await t.pumpWidget(wrap());
     expect(find.text('Today'), findsOneWidget);
     expect(find.text('Notes'), findsOneWidget);
+    expect(find.text('Flashcards'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
     expect(find.text('Calendar'), findsNothing);
   });
