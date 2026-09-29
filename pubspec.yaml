@@ -39,7 +39,7 @@ flutter_launcher_icons:
   ios: true
   remove_alpha_ios: true
   image_path: "assets/images/klugmind_logo.png"
-  adaptive_icon_background: "#F6F7FB"
+  adaptive_icon_background: "assets/images/klugmind_logo.png"
   adaptive_icon_foreground: "assets/images/klugmind_logo.png"
   web:
     generate: true

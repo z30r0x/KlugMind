@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/features/flashcards_page/flashcards.dart';
 import 'package:klugmind/features/notes_page/notes.dart';
+import 'package:klugmind/features/profile_page/profile.dart';
 
 /// Top-level destinations in the bottom navigation bar.
 enum AppTab { today, notes, flashcards, profile }
 
 /// Shared bottom navigation ("• Today  • Notes  • Flashcards  • Profile").
 /// Each page passes only its own [active] tab; navigation is handled here.
-/// Today is the root route; Notes/Flashcards replace each other instead of
+/// Today is the root route; other tabs replace each other instead of
 /// stacking.
 ///
 /// Callers must have run `AppColors.sync(context)` earlier in the same
@@ -44,7 +45,7 @@ class AppBottomNav extends StatelessWidget {
           cards: FlashcardsPage.lastDeck,
           courseName: FlashcardsPage.lastCourse,
         ),
-      AppTab.profile => null, // TODO: Profile page
+      AppTab.profile => const ProfilePage(),
       AppTab.today => null,
     };
     if (page == null) return;
