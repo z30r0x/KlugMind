@@ -5,7 +5,8 @@ import 'theme_controller.dart';
 
 /// The ☾ / ☀ toggle from the prototype's status bar (`.theme-toggle`).
 /// 26x26 rounded square, `bg-surface-2` fill, `divider`-colored 1px
-/// border, sun/moon glyph that flips with the current theme.
+/// border. The glyph shows the CURRENT mode: ☀ in light mode, ☾ in dark
+/// mode. Tapping it switches to the other mode.
 class ThemeButton extends StatelessWidget {
   const ThemeButton({super.key});
 
@@ -49,7 +50,7 @@ class _ToggleTapTarget extends StatelessWidget {
             border: Border.all(color: AppColors.divider, width: 1),
           ),
           child: Text(
-            isDark ? '☀' : '☾',
+            isDark ? '☾' : '☀',
             style: TextStyle(
               fontSize: 13,
               color: AppColors.textMain,

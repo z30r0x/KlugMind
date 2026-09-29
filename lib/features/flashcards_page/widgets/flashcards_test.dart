@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:klugmind/core/models/material_models.dart';
+import 'package:klugmind/core/widgets/page_top_bar.dart';
+import 'package:klugmind/core/widgets/step_dots.dart';
+import 'package:klugmind/core/widgets/theme_button.dart';
+import 'package:klugmind/core/widgets/theme_controller.dart';
 import 'package:klugmind/features/flashcards_page/flashcards.dart';
 
 const _cards = [
@@ -27,6 +31,8 @@ VoidCallback? _tapOf(WidgetTester t, String label) => t
     .onTap;
 
 void main() {
+  tearDown(() => ThemeController.mode.value = ThemeMode.system);
+
   testWidgets('renders first card, counter, streak and hint', (t) async {
     await t.pumpWidget(wrap());
     expect(find.text('Card 1 of 2'), findsOneWidget);
@@ -74,5 +80,44 @@ void main() {
     expect(find.text('Notes'), findsOneWidget);
     expect(find.text('Flashcards'), findsOneWidget);
     expect(find.text('Profile'), findsOneWidget);
+  });
+
+  testWidgets('study view shows step dots and theme toggle', (t) async {
+    await t.pumpWidget(wrap());
+    expect(find.byType(PageTopBar), findsOneWidget);
+    expect(find.byType(StepDots), findsOneWidget);
+    expect(find.byType(ThemeButton), findsOneWidget);
+  });
+
+  testWidgets('empty state shows step dots, theme toggle and centered message',
+      (t) async {
+    await t.pumpWidget(wrap(cards: const []));
+    expect(find.byType(StepDots), findsOneWidget);
+    expect(find.byType(ThemeButton), findsOneWidget);
+    expect(find.text('Back'), findsOneWidget);
+    // The message block is centered horizontally on screen.
+    final center = t.getCenter(find.text('No cards to study'));
+    expect(center.dx, closeTo(t.view.physicalSize.width / t.view.devicePixelRatio / 2, 1));
+  });
+
+  testWidgets('theme icon shows a sun in light mode and a moon in dark mode',
+      (t) async {
+    ThemeController.mode.value = ThemeMode.light;
+    await t.pumpWidget(wrap());
+    expect(find.text('☀'), findsOneWidget);
+    expect(find.text('☾'), findsNothing);
+
+    ThemeController.mode.value = ThemeMode.dark;
+    await t.pump();
+    expect(find.text('☾'), findsOneWidget);
+    expect(find.text('☀'), findsNothing);
+  });
+
+  testWidgets('tapping the theme icon switches the glyph', (t) async {
+    ThemeController.mode.value = ThemeMode.light;
+    await t.pumpWidget(wrap());
+    await t.tap(find.text('☀'));
+    await t.pump();
+    expect(find.text('☾'), findsOneWidget);
   });
 }
