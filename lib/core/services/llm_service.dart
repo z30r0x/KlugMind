@@ -3,35 +3,16 @@ import 'package:http/http.dart' as http;
 
 import '../models/material_models.dart';
 
-/// Turns raw OCR/voice text into structured study data using a **local**
-/// LLM served by Ollama (https://ollama.com) — free, no API key, no rate
-/// limits, and fast because there's no network hop to a third party.
+/// Turns raw OCR/voice text into structured study data.
 ///
-/// This is the piece the README calls out under "Hackathon Learning":
-/// *"Designed strict JSON schemas for syllabus extraction, reducing JSON
-/// parse errors from ~20% to under 1.5% using schema enforcement and
-/// fallback repair layers."* The two techniques doing that work are:
+/// Prompt, JSON schema, parsing and the fallback repair pass live here and
+/// are shared by every backend. Only [generate] differs:
+///  - this class: Ollama over HTTP (dev only, needs a laptop on the network)
+///  - OnDeviceLlmService: on-device model (release builds)
 ///
-/// 1. **Structured JSON mode**: we tell the model exactly which keys,
-///    types, and enums are allowed, and ask for JSON-only output — no
-///    prose, no markdown fences. Ollama's `"format": "json"` enforces
-///    valid-JSON-shaped output at the sampler level (not just via prompt
-///    instructions), which is a stronger guarantee than Gemini's MIME-type
-///    hint. Constraining the *shape* of the output up front prevents most
-///    of the malformed-response class of errors.
-/// 2. **Fallback repair pass**: if the first response still doesn't match
-///    our schema (rare, but happens with small/quantized local models on
-///    edge-case input), we don't retry blindly — we send the *broken*
-///    output back to the model in a second call and ask it specifically
-///    to fix it into valid JSON matching the schema. This is cheaper and
-///    more reliable than re-running the whole extraction from scratch.
-///
-/// Reachability note: Ollama binds to localhost on the machine it runs on.
-/// - Android emulator -> host laptop: use `http://10.0.2.2:11434`
-/// - iOS simulator -> host laptop: `http://localhost:11434` works as-is
-/// - Physical device: start Ollama with `OLLAMA_HOST=0.0.0.0 ollama serve`
-///   and point [baseUrl] at your laptop's LAN IP, e.g.
-///   `http://192.168.1.23:11434`. Both devices must share the same Wi-Fi.
+/// Ollama reachability (dev): Android emulator `http://10.0.2.2:11434`,
+/// iOS simulator `http://localhost:11434`, physical device: run
+/// `OLLAMA_HOST=0.0.0.0 ollama serve` and use the laptop's LAN IP.
 class LlmService {
   final String baseUrl;
   final String model;
@@ -43,8 +24,7 @@ class LlmService {
 
   Uri get _endpoint => Uri.parse('$baseUrl/api/generate');
 
-  /// Main entry point: raw text in (from OCR or voice) -> structured
-  /// assignments/flashcards/quiz items out.
+  /// Main entry point: raw text in -> structured assignments/flashcards/quiz.
   Future<StructuredExtraction> structureMaterial(
     RawMaterial material, {
     int flashcardCount = 10,
@@ -56,22 +36,21 @@ class LlmService {
       quizItemCount: quizItemCount,
     );
 
-    final rawResponse = await _callModel(prompt);
+    final rawResponse = await generate(prompt);
     final parsed = _tryParseJson(rawResponse);
-
     if (parsed != null) {
-      return _toStructuredExtraction(parsed, usedFallbackRepair: false);
+      final result = _toStructuredExtraction(parsed, usedFallbackRepair: false);
+      if (result != null) return result;
     }
 
-    // First pass failed schema validation -> fallback repair pass.
+    // First pass failed parsing or schema -> fallback repair pass.
     final repaired = await _repairJson(rawResponse);
     if (repaired != null) {
-      return _toStructuredExtraction(repaired, usedFallbackRepair: true);
+      final result = _toStructuredExtraction(repaired, usedFallbackRepair: true);
+      if (result != null) return result;
     }
 
-    // Both passes failed. Don't fabricate data — surface an empty result
-    // so the UI can prompt the user to retry or edit the preview text
-    // manually instead of silently losing their material.
+    // Both passes failed. Don't fabricate data; the UI asks the user to retry.
     return StructuredExtraction.empty();
   }
 
@@ -139,7 +118,8 @@ ${material.extractedText}
 ''';
   }
 
-  Future<String> _callModel(String prompt) async {
+  /// Overridable model call. Default: Ollama HTTP (dev only).
+  Future<String> generate(String prompt) async {
     final http.Response response;
     try {
       response = await http
@@ -150,14 +130,11 @@ ${material.extractedText}
               'model': model,
               'prompt': prompt,
               'stream': false,
-              // Ollama's structured-output mode: constrains sampling to
-              // valid JSON, not just a prompt-level instruction.
               'format': 'json',
               'options': {
                 'temperature': 0.2,
-                // Keep local inference snappy on laptop hardware; raise
-                // if truncated JSON shows up in practice for long syllabi.
-                'num_predict': 1024,
+                // 1024 truncated 10 cards + 5 quiz items -> broken JSON.
+                'num_predict': 2048,
               },
             }),
           )
@@ -183,11 +160,9 @@ ${material.extractedText}
     return text;
   }
 
-  /// Asks the model to fix its own previous output into valid JSON,
-  /// rather than re-deriving the extraction from the source text again.
+  /// Asks the model to fix its own previous output into valid JSON.
   Future<Map<String, dynamic>?> _repairJson(String brokenOutput) async {
-    final repairPrompt =
-        '''
+    final repairPrompt = '''
 The following text was supposed to be a single valid JSON object but
 failed to parse. Fix it into valid JSON that preserves all the original
 data (do not remove or invent fields). Return ONLY the corrected JSON,
@@ -198,13 +173,11 @@ BROKEN OUTPUT:
 $brokenOutput
 """
 ''';
-    final fixed = await _callModel(repairPrompt);
+    final fixed = await generate(repairPrompt);
     return _tryParseJson(fixed);
   }
 
   Map<String, dynamic>? _tryParseJson(String text) {
-    // Defensive strip in case the model wraps output in ```json fences
-    // despite instructions not to — cheap and doesn't hurt correct output.
     final cleaned = text
         .trim()
         .replaceAll(RegExp(r'^```json'), '')
@@ -220,32 +193,38 @@ $brokenOutput
           decoded.containsKey('quiz_items')) {
         return decoded;
       }
-      return null; // Parsed but doesn't match schema shape.
+      return null;
     } catch (_) {
       return null;
     }
   }
 
-  StructuredExtraction _toStructuredExtraction(
+  /// Returns null if any item has wrong types/missing fields (common with
+  /// small models), so the caller can fall through to the repair pass.
+  StructuredExtraction? _toStructuredExtraction(
     Map<String, dynamic> json, {
     required bool usedFallbackRepair,
   }) {
-    final assignments = (json['assignments'] as List? ?? [])
-        .map((a) => ExtractedAssignment.fromJson(a as Map<String, dynamic>))
-        .toList();
-    final flashcards = (json['flashcards'] as List? ?? [])
-        .map((f) => GeneratedFlashcard.fromJson(f as Map<String, dynamic>))
-        .toList();
-    final quizItems = (json['quiz_items'] as List? ?? [])
-        .map((q) => GeneratedQuizItem.fromJson(q as Map<String, dynamic>))
-        .toList();
+    try {
+      final assignments = (json['assignments'] as List? ?? [])
+          .map((a) => ExtractedAssignment.fromJson(a as Map<String, dynamic>))
+          .toList();
+      final flashcards = (json['flashcards'] as List? ?? [])
+          .map((f) => GeneratedFlashcard.fromJson(f as Map<String, dynamic>))
+          .toList();
+      final quizItems = (json['quiz_items'] as List? ?? [])
+          .map((q) => GeneratedQuizItem.fromJson(q as Map<String, dynamic>))
+          .toList();
 
-    return StructuredExtraction(
-      assignments: assignments,
-      flashcards: flashcards,
-      quizItems: quizItems,
-      usedFallbackRepair: usedFallbackRepair,
-    );
+      return StructuredExtraction(
+        assignments: assignments,
+        flashcards: flashcards,
+        quizItems: quizItems,
+        usedFallbackRepair: usedFallbackRepair,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }
 

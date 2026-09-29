@@ -15,7 +15,7 @@ import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/features/flashcards_page/flashcards.dart';
 
 /// Notes → Flashcards & Quiz. Typed text, camera photo (OCR) or device PDF
-/// -> StudyIntakeService -> local LLM -> preview -> FlashcardsPage.
+/// -> StudyIntakeService -> on-device LLM -> preview -> FlashcardsPage.
 class NotesPage extends StatefulWidget {
   const NotesPage({
     super.key,
@@ -44,6 +44,7 @@ class _NotesPageState extends State<NotesPage> {
   StructuredExtraction? _result;
   bool _loading = false;
   bool _lowConfidence = false;
+  int? _downloadPct;
 
   @override
   void dispose() {
@@ -78,7 +79,8 @@ class _NotesPageState extends State<NotesPage> {
     if (e is llm.HttpException ||
         e is TimeoutException ||
         e is SocketException) {
-      return "Couldn't reach the study model. Is Ollama running?";
+      return "Couldn't run the study model on this device. "
+          'Check your connection for the first download.';
     }
     if (e is FormatException) return e.message;
     return 'Something went wrong. Please try again.';
@@ -131,6 +133,12 @@ class _NotesPageState extends State<NotesPage> {
       _result = null;
     });
     try {
+      // First run downloads the on-device model; no-op afterwards.
+      await _service.prepareModel(onProgress: (p) {
+        if (mounted) setState(() => _downloadPct = p);
+      });
+      if (mounted) setState(() => _downloadPct = null);
+
       final base = _raw ??
           RawMaterial(
             id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -152,7 +160,10 @@ class _NotesPageState extends State<NotesPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _downloadPct = null;
+      });
       _toast(_friendly(e));
     }
   }
@@ -271,7 +282,13 @@ class _NotesPageState extends State<NotesPage> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    _GenerateButton(loading: _loading, onTap: _generate),
+                    _GenerateButton(
+                      loading: _loading,
+                      label: _downloadPct == null
+                          ? 'Generating…'
+                          : 'Downloading model $_downloadPct%',
+                      onTap: _generate,
+                    ),
                     if (result != null) ...[
                       Padding(
                         padding: const EdgeInsets.only(top: 24, bottom: 10),
@@ -327,8 +344,10 @@ class _UploadButton extends StatelessWidget {
 }
 
 class _GenerateButton extends StatelessWidget {
-  const _GenerateButton({required this.loading, required this.onTap});
+  const _GenerateButton(
+      {required this.loading, required this.onTap, this.label = 'Generating…'});
   final bool loading;
+  final String label;
   final VoidCallback onTap;
 
   @override
@@ -362,7 +381,7 @@ class _GenerateButton extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text('Generating…', style: style),
+                          Text(label, style: style),
                         ],
                       )
                     : Text('✨ Generate Flashcards + Quiz', style: style),

@@ -6,6 +6,7 @@ import 'package:klugmind/core/models/material_models.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import 'llm_service.dart';
+import 'on_device_llm_service.dart';
 import 'voice_service.dart' show OcrService;
 
 /// Facade for Notes intake: PDF / photo / typed text -> RawMaterial -> LLM.
@@ -26,12 +27,15 @@ class StudyIntakeService {
   LlmService get _llm => _llmOverride ?? (_llmCache ??= _buildLlm());
   OcrService get _ocr => _ocrOverride ?? (_ocrCache ??= OcrService());
 
+  /// Non-secret config only; .env ships inside the APK/IPA.
+  /// OLLAMA_BASE_URL set -> Ollama (development). Otherwise -> on-device model.
   static LlmService _buildLlm() {
-    // Non-secret config only; .env ships inside the APK/IPA.
-    final url = dotenv.isInitialized ? dotenv.env['OLLAMA_BASE_URL'] : null;
-    final model = dotenv.isInitialized ? dotenv.env['OLLAMA_MODEL'] : null;
-    if (url == null || url.isEmpty) return LlmService();
-    return LlmService(baseUrl: url, model: model ?? 'llama3.2:3b');
+    final env = dotenv.isInitialized ? dotenv.env : const <String, String>{};
+    final url = env['OLLAMA_BASE_URL'];
+    if (url != null && url.isNotEmpty) {
+      return LlmService(baseUrl: url, model: env['OLLAMA_MODEL'] ?? 'llama3.2:3b');
+    }
+    return OnDeviceLlmService(modelUrl: env['MODEL_URL'] ?? '');
   }
 
   /// Strips control chars (keeps \n, \t), trims, caps length.
@@ -40,6 +44,12 @@ class StudyIntakeService {
         .replaceAll(RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'), '')
         .trim();
     return cleaned.length > maxChars ? cleaned.substring(0, maxChars) : cleaned;
+  }
+
+  /// Downloads the on-device model if needed; no-op for other backends.
+  Future<void> prepareModel({void Function(int percent)? onProgress}) async {
+    final l = _llm;
+    if (l is OnDeviceLlmService) await l.ensureReady(onProgress: onProgress);
   }
 
   Future<RawMaterial> fromPdf(String path, {String? courseId}) async {
@@ -90,5 +100,9 @@ class StudyIntakeService {
     return _llm.structureMaterial(material.copyWith(extractedText: clean));
   }
 
-  void dispose() => _ocrCache?.dispose();
+  void dispose() {
+    _ocrCache?.dispose();
+    final l = _llmCache;
+    if (l is OnDeviceLlmService) l.dispose();
+  }
 }

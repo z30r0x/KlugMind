@@ -1,3 +1,4 @@
+// lib/features/notes_page/notes_test.dart
 import 'dart:async';
 import 'dart:io';
 
@@ -19,14 +20,26 @@ const _quiz = [
 ];
 
 class _FakeIntake extends StudyIntakeService {
-  _FakeIntake({this.completer, this.result, this.error});
+  _FakeIntake({this.completer, this.result, this.error, this.prepare, this.prepareError});
   final Completer<StructuredExtraction>? completer;
   final StructuredExtraction? result;
   final Object? error;
+  final Completer<void>? prepare;
+  final Object? prepareError;
   RawMaterial? last;
 
   RawMaterial _mk(MaterialSource s, String t, double c) => RawMaterial(
       id: '1', source: s, extractedText: t, confidence: c, capturedAt: DateTime(2026));
+
+  // Must be overridden: the real one would touch the on-device model plugin.
+  @override
+  Future<void> prepareModel({void Function(int percent)? onProgress}) async {
+    if (prepareError != null) throw prepareError!;
+    if (prepare != null) {
+      onProgress?.call(40);
+      await prepare!.future;
+    }
+  }
 
   @override
   Future<RawMaterial> fromPdf(String path, {String? courseId}) async =>
@@ -91,6 +104,32 @@ void main() {
     expect(find.text('1-question quiz ready'), findsOneWidget);
   });
 
+  testWidgets('first-run model download shows progress, then generates',
+      (t) async {
+    final p = Completer<void>();
+    await t.pumpWidget(wrap(service: _FakeIntake(prepare: p)));
+    await t.enterText(find.byType(TextField), 'notes');
+    await t.tap(find.text('✨ Generate Flashcards + Quiz'));
+    await t.pump();
+    await t.pump();
+    expect(find.text('Downloading model 40%'), findsOneWidget);
+    p.complete();
+    await t.pumpAndSettle();
+    expect(find.text('Preview — edit before saving'), findsOneWidget);
+  });
+
+  testWidgets('model download failure shows friendly SnackBar and resets',
+      (t) async {
+    await t.pumpWidget(
+        wrap(service: _FakeIntake(prepareError: llm.HttpException('net'))));
+    await t.enterText(find.byType(TextField), 'notes');
+    await t.tap(find.text('✨ Generate Flashcards + Quiz'));
+    await t.pumpAndSettle();
+    expect(find.textContaining("Couldn't run the study model"), findsOneWidget);
+    expect(find.text('✨ Generate Flashcards + Quiz'), findsOneWidget);
+    expect(find.text('net'), findsNothing);
+  });
+
   testWidgets('empty model result shows SnackBar, no preview', (t) async {
     await t.pumpWidget(wrap(
         service: _FakeIntake(result: StructuredExtraction.empty())));
@@ -107,8 +146,7 @@ void main() {
     await t.enterText(find.byType(TextField), 'x');
     await t.tap(find.text('✨ Generate Flashcards + Quiz'));
     await t.pumpAndSettle();
-    expect(find.text("Couldn't reach the study model. Is Ollama running?"),
-        findsOneWidget);
+    expect(find.textContaining("Couldn't run the study model"), findsOneWidget);
     expect(find.text('boom'), findsNothing);
   });
 
