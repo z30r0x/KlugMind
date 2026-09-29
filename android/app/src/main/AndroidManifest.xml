@@ -1,9 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="KlugMind"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <uses-permission android:name="android.permission.INTERNET"/>
         <uses-native-library android:name="libOpenCL.so" android:required="false"/>
         <activity
             android:name=".MainActivity"
