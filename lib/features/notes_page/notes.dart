@@ -3,19 +3,24 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:klugmind/core/models/material_models.dart';
 import 'package:klugmind/core/services/llm_service.dart' as llm;
+import 'package:klugmind/core/services/study_store.dart';
 import 'package:klugmind/core/services/study_intake_service.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/features/flashcards_page/flashcards.dart';
+import 'package:klugmind/features/onboarding_page/onboarding.dart';
+import 'package:klugmind/features/onboarding_page/widgets/study_task.dart';
 
-/// Notes → Flashcards & Quiz. Typed text, camera photo (OCR) or device PDF
-/// -> StudyIntakeService -> on-device LLM -> preview -> FlashcardsPage.
+/// Notes → study blocks (if the text has dates) or flashcards + quiz.
+/// Typed text, camera photo (OCR) or device PDF -> StudyIntakeService ->
+/// LLM -> preview -> Today page or FlashcardsPage.
 class NotesPage extends StatefulWidget {
   const NotesPage({
     super.key,
@@ -166,7 +171,8 @@ class _NotesPageState extends State<NotesPage> {
           );
       final result = await _service.analyze(base.copyWith(extractedText: text));
       if (!mounted) return;
-      if (result.flashcards.isEmpty) {
+      final hasBlocks = StudyStore.blocksFrom(result.assignments).isNotEmpty;
+      if (result.flashcards.isEmpty && !hasBlocks) {
         setState(() => _loading = false);
         _toast("Couldn't make cards from that. Edit the text and try again.");
         return;
@@ -189,8 +195,26 @@ class _NotesPageState extends State<NotesPage> {
   void _saveAndStudy() {
     final r = _result;
     if (r == null) return;
-    FlashcardsPage.lastDeck = r.flashcards;
-    FlashcardsPage.lastCourse = widget.courseName;
+
+    // Keep the deck available on the Flashcards tab either way.
+    if (r.flashcards.isNotEmpty) {
+      FlashcardsPage.lastDeck = r.flashcards;
+      FlashcardsPage.lastCourse = widget.courseName;
+    }
+
+    // Dated items -> study blocks on the Today page.
+    final blocks = StudyStore.blocksFrom(r.assignments);
+    if (blocks.isNotEmpty) {
+      StudyStore.add(blocks);
+      widget.onSaveAndStudy?.call();
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const OnboardingPage()),
+        (_) => false,
+      );
+      return;
+    }
+
+    // No dates -> flashcards.
     // TODO: persist deck (Hive/Supabase) before navigating.
     widget.onSaveAndStudy?.call();
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -203,6 +227,9 @@ class _NotesPageState extends State<NotesPage> {
   Widget build(BuildContext context) {
     AppColors.sync(context);
     final result = _result;
+    final blocks = result == null
+        ? const <StudyTask>[]
+        : StudyStore.blocksFrom(result.assignments);
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
 
     return Scaffold(
@@ -314,14 +341,26 @@ class _NotesPageState extends State<NotesPage> {
                             style: Fonts.sectionLabel
                                 .copyWith(color: AppColors.textDim)),
                       ),
-                      _FlashPreview(
-                          card: result.flashcards.first,
-                          total: result.flashcards.length),
-                      const SizedBox(height: 12),
-                      _QuizRow(count: result.quizItems.length),
-                      const SizedBox(height: 16),
-                      _SuccessButton(
-                          label: 'Save & Start Studying', onTap: _saveAndStudy),
+                      if (blocks.isNotEmpty) ...[
+                        for (final b in blocks)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _BlockPreview(task: b),
+                          ),
+                        const SizedBox(height: 8),
+                        _SuccessButton(
+                            label: 'Add to my plan', onTap: _saveAndStudy),
+                      ] else ...[
+                        _FlashPreview(
+                            card: result.flashcards.first,
+                            total: result.flashcards.length),
+                        const SizedBox(height: 12),
+                        _QuizRow(count: result.quizItems.length),
+                        const SizedBox(height: 16),
+                        _SuccessButton(
+                            label: 'Save & Start Studying',
+                            onTap: _saveAndStudy),
+                      ],
                     ],
                   ],
                 ),
@@ -407,6 +446,36 @@ class _GenerateButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _BlockPreview extends StatelessWidget {
+  const _BlockPreview({required this.task});
+  final StudyTask task;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        border: Border.all(color: AppColors.divider),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(task.timeRange,
+              style: Fonts.caption.copyWith(color: AppColors.textFaint)),
+          const SizedBox(height: 4),
+          Text(task.title,
+              style: Fonts.bodyBold.copyWith(color: AppColors.textMain)),
+          Text(task.courseName,
+              style: Fonts.caption.copyWith(color: AppColors.textDim)),
+        ],
       ),
     );
   }

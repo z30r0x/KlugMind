@@ -19,6 +19,10 @@ class StudyIntakeService {
   static const int maxChars = 12000;
   static const int maxPdfBytes = 15 * 1024 * 1024;
 
+  /// A 0.5B on-device model has a ~1280-token window. Prompt schema
+  /// (~350 tokens) + input + output must fit, so cap the input hard.
+  static const int onDeviceMaxChars = 1500;
+
   final LlmService? _llmOverride;
   final OcrService? _ocrOverride;
   LlmService? _llmCache;
@@ -28,14 +32,18 @@ class StudyIntakeService {
   OcrService get _ocr => _ocrOverride ?? (_ocrCache ??= OcrService());
 
   /// Non-secret config only; .env ships inside the APK/IPA.
-  /// OLLAMA_BASE_URL set -> Ollama (development). Otherwise -> on-device model.
+  /// OLLAMA_BASE_URL set -> Ollama (development). Otherwise -> on-device.
   static LlmService _buildLlm() {
     final env = dotenv.isInitialized ? dotenv.env : const <String, String>{};
     final url = env['OLLAMA_BASE_URL'];
     if (url != null && url.isNotEmpty) {
-      return LlmService(baseUrl: url, model: env['OLLAMA_MODEL'] ?? 'llama3.2:3b');
+      return LlmService(
+          baseUrl: url, model: env['OLLAMA_MODEL'] ?? 'qwen2.5:3b');
     }
-    return OnDeviceLlmService(modelUrl: env['MODEL_URL'] ?? '');
+    return OnDeviceLlmService(
+      modelUrl: env['MODEL_URL'] ?? '',
+      modelType: env['MODEL_TYPE'] ?? 'qwen',
+    );
   }
 
   /// Strips control chars (keeps \n, \t), trims, caps length.
@@ -93,11 +101,19 @@ class StudyIntakeService {
   }
 
   Future<StructuredExtraction> analyze(RawMaterial material) {
-    final clean = sanitize(material.extractedText);
+    var clean = sanitize(material.extractedText);
     if (clean.isEmpty) {
       throw const FormatException('Add notes, a PDF, or a photo first.');
     }
-    return _llm.structureMaterial(material.copyWith(extractedText: clean));
+    final small = _llm is OnDeviceLlmService;
+    if (small && clean.length > onDeviceMaxChars) {
+      clean = clean.substring(0, onDeviceMaxChars);
+    }
+    return _llm.structureMaterial(
+      material.copyWith(extractedText: clean),
+      flashcardCount: small ? 5 : 10,
+      quizItemCount: small ? 3 : 5,
+    );
   }
 
   void dispose() {

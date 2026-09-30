@@ -4,9 +4,9 @@ import 'package:klugmind/core/utils/styles/colors.dart';
 import 'theme_controller.dart';
 
 /// The ☾ / ☀ toggle from the prototype's status bar (`.theme-toggle`).
-/// 26x26 rounded square, `bg-surface-2` fill, `divider`-colored 1px
-/// border. The glyph shows the CURRENT mode: ☀ in light mode, ☾ in dark
-/// mode. Tapping it switches to the other mode.
+/// 26x26 rounded square, black fill in dark mode / white in light mode,
+/// `divider`-colored 1px border. The glyph shows the target mode:
+/// ☀ in dark mode, ☾ in light mode. Tapping it switches to that mode.
 class ThemeButton extends StatelessWidget {
   const ThemeButton({super.key});
 
@@ -33,8 +33,7 @@ class _ToggleTapTarget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // AppColors.sync must have been called by an ancestor this build pass
-    // (every page's build() does `AppColors.sync(context)` first).
+    final darkMode = Theme.of(context).brightness == Brightness.dark;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -45,7 +44,7 @@ class _ToggleTapTarget extends StatelessWidget {
           height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: AppColors.bgSurface2,
+            color: darkMode ? Colors.black : Colors.white,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: AppColors.divider, width: 1),
           ),
@@ -53,7 +52,7 @@ class _ToggleTapTarget extends StatelessWidget {
             isDark ? '☀' : '☾',
             style: TextStyle(
               fontSize: 13,
-              color: AppColors.textMain,
+              color: darkMode ? Colors.white : Colors.black,
               height: 1,
             ),
           ),

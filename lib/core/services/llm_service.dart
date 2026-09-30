@@ -19,7 +19,7 @@ class LlmService {
 
   LlmService({
     this.baseUrl = 'http://10.0.2.2:11434',
-    this.model = 'llama3.2:3b',
+    this.model = 'qwen2.5:3b',
   });
 
   Uri get _endpoint => Uri.parse('$baseUrl/api/generate');
@@ -59,6 +59,7 @@ class LlmService {
     required int flashcardCount,
     required int quizItemCount,
   }) {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
     final sourceLabel = switch (material.source) {
       MaterialSource.photo => 'a photo of a syllabus or notes page',
       MaterialSource.pdf => 'a PDF of course material',
@@ -105,6 +106,9 @@ no commentary, no trailing text before or after the JSON object.
 Rules:
 - If no assignments/exams are mentioned, return an empty array for
   "assignments" — do not fabricate any.
+- Today's date is $today. Convert every date you find (including relative
+  ones like "next Friday") to an ISO 8601 date. Use null only if no date
+  exists.
 - Generate exactly $flashcardCount flashcards and $quizItemCount quiz
   items from the conceptual content, even if there are zero assignments.
 - If the source text is too sparse or garbled to extract anything

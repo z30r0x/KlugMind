@@ -21,6 +21,7 @@ class StudyTask {
   final String courseName;
   final TaskPriority priority;
   final bool done;
+  final DateTime? date;
 
   const StudyTask({
     required this.id,
@@ -29,6 +30,7 @@ class StudyTask {
     required this.courseName,
     required this.priority,
     this.done = false,
+    this.date,
   });
 
   StudyTask copyWith({bool? done}) => StudyTask(
@@ -38,5 +40,6 @@ class StudyTask {
         courseName: courseName,
         priority: priority,
         done: done ?? this.done,
+        date: date,
       );
 }

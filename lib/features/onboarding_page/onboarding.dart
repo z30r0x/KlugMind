@@ -1,5 +1,6 @@
 // lib/features/onboarding_page/onboarding.dart
 import 'package:flutter/material.dart';
+import 'package:klugmind/core/services/study_store.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
@@ -60,7 +61,24 @@ class _HomePageState extends State<OnboardingPage> {
     ),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    StudyStore.tasks.addListener(_onPlan);
+  }
+
+  @override
+  void dispose() {
+    StudyStore.tasks.removeListener(_onPlan);
+    super.dispose();
+  }
+
+  void _onPlan() {
+    if (mounted) setState(() {});
+  }
+
   void _toggle(String id) {
+    if (StudyStore.toggle(id)) return; // task came from the store
     setState(() {
       final i = _tasks.indexWhere((t) => t.id == id);
       if (i == -1) return;
@@ -108,7 +126,7 @@ class _HomePageState extends State<OnboardingPage> {
                             style: Fonts.sectionLabel
                                 .copyWith(color: AppColors.textDim)),
                         const SizedBox(height: 10),
-                        for (final task in _tasks)
+                        for (final task in [..._tasks, ...StudyStore.tasks.value])
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: TaskCard(

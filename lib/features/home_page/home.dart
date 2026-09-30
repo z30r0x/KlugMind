@@ -272,7 +272,7 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Set up Klugmind',
+                    Text('Set up KlugMind',
                         style: Fonts.h1Lg.copyWith(color: AppColors.textMain)),
                     const SizedBox(height: 6),
                     Text('Add your courses so we can build your plan',
