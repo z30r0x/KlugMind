@@ -50,7 +50,7 @@ class _ToggleTapTarget extends StatelessWidget {
             border: Border.all(color: AppColors.divider, width: 1),
           ),
           child: Text(
-            isDark ? '☾' : '☀',
+            isDark ? '☀' : '☾',
             style: TextStyle(
               fontSize: 13,
               color: AppColors.textMain,

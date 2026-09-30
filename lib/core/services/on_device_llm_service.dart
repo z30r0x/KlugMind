@@ -28,7 +28,8 @@ class OnDeviceLlmService extends LlmService {
     if (_model != null) return;
     if (!modelUrl.startsWith('https://')) {
       throw const FormatException(
-          'MODEL_URL is missing or invalid in .env (must start with https://).');
+        'MODEL_URL is missing or invalid in .env (must start with https://).',
+      );
     }
     try {
       // Future.value works whether hasActiveModel is sync or async.
@@ -43,7 +44,8 @@ class OnDeviceLlmService extends LlmService {
     } catch (e) {
       debugPrint('OnDeviceLlmService init failed: $e');
       throw HttpException(
-          'On-device model unavailable (download failed or device too weak): $e');
+        'On-device model unavailable (download failed or device too weak): $e',
+      );
     }
   }
 

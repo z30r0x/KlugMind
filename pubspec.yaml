@@ -39,12 +39,13 @@ flutter_launcher_icons:
   ios: true
   remove_alpha_ios: true
   image_path: "assets/images/klugmind_logo.png"
-  adaptive_icon_background: "assets/images/klugmind_logo.png"
+  adaptive_icon_background: "#0B0B0D"
   adaptive_icon_foreground: "assets/images/klugmind_logo.png"
+  adaptive_icon_foreground_inset: 0   # removes the 16% shrink
   web:
     generate: true
     image_path: "assets/images/klugmind_logo.png"
-    background_color: "#F6F7FB"
+    background_color: "#0B0B0D"
     theme_color: "#3B5BFD"
 
 flutter:
