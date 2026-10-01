@@ -9,15 +9,16 @@ import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
-import 'package:klugmind/features/flashcards_page/flashcard_view.dart';
+import 'package:klugmind/features/flashcards_page/widgets/flashcard_view.dart';
 import 'package:klugmind/features/flashcards_page/flashcards.dart';
 import 'widgets/study_task.dart';
 
 /// "Today's Plan" home screen with date-specific example and imported tasks.
 class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({super.key, this.initialDate});
+  const OnboardingPage({super.key, this.initialDate, this.voiceService});
 
   final DateTime? initialDate;
+  final VoiceService? voiceService;
 
   @override
   State<OnboardingPage> createState() => _HomePageState();
@@ -26,7 +27,8 @@ class OnboardingPage extends StatefulWidget {
 class _HomePageState extends State<OnboardingPage> {
   late DateTime _selectedDate;
   final Map<String, bool> _exampleCompletion = {};
-  final _voiceService = VoiceService();
+  late final VoiceService _voiceService =
+      widget.voiceService ?? VoiceService();
 
   @override
   void initState() {
@@ -170,181 +172,212 @@ class _HomePageState extends State<OnboardingPage> {
   Future<void> _addStudyBlock() async {
     final courses = CourseStore.courses.value;
     var courseName = courses.isEmpty ? 'Independent study' : courses.first.name;
-    var title = '';
+    final titleController = TextEditingController();
     var time = '';
     var priority = TaskPriority.medium;
-    final task = await showModalBottomSheet<StudyTask>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: AppColors.bgSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            20,
-            24,
-            24 + MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Add a study task',
-                  style: Fonts.h1.copyWith(color: AppColors.textMain),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Task',
-                  style: Fonts.caption.copyWith(color: AppColors.textDim),
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  autofocus: true,
-                  maxLength: 60,
-                  onChanged: (value) => title = value,
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Review Chapter 5',
-                    filled: true,
-                    fillColor: AppColors.bgSurface2,
-                    counterText: '',
-                    suffixIcon: IconButton(
-                      tooltip: 'Dictate task',
-                      icon: const Icon(Icons.mic_none),
-                      onPressed: () async {
-                        try {
-                          await _voiceService.listenAndTranscribe(
-                            onPartialResult: (partial) {
-                              title = partial;
-                              setSheetState(() {});
-                            },
-                          );
-                        } catch (error) {
-                          if (sheetContext.mounted) {
-                            ScaffoldMessenger.of(sheetContext).showSnackBar(
-                              SnackBar(content: Text(error.toString())),
-                            );
-                          }
-                        }
-                      },
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Course',
-                  style: Fonts.caption.copyWith(color: AppColors.textDim),
-                ),
-                const SizedBox(height: 6),
-                if (courses.isNotEmpty)
-                  DropdownButtonFormField<String>(
-                    value: courseName,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: AppColors.bgSurface2,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    items: [
-                      for (final course in courses)
-                        DropdownMenuItem(
-                          value: course.name,
-                          child: Text(course.name),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setSheetState(() => courseName = value);
-                      }
-                    },
-                  ),
-                const SizedBox(height: 10),
-                Text(
-                  'Time (optional)',
-                  style: Fonts.caption.copyWith(color: AppColors.textDim),
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  onChanged: (value) => time = value,
-                  decoration: InputDecoration(
-                    hintText: 'e.g. 7:00 – 7:45 PM',
-                    filled: true,
-                    fillColor: AppColors.bgSurface2,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Priority',
-                  style: Fonts.caption.copyWith(color: AppColors.textDim),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final option in TaskPriority.values)
-                      ChoiceChip(
-                        label: Text(option.label),
-                        selected: priority == option,
-                        onSelected: (_) =>
-                            setSheetState(() => priority = option),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () {
-                          if (title.trim().isEmpty) return;
-                          Navigator.of(sheetContext).pop(
-                            StudyTask(
-                              id: 'manual-${DateTime.now().microsecondsSinceEpoch}',
-                              timeRange: time.trim().isEmpty
-                                  ? 'Anytime today'
-                                  : time.trim(),
-                              title: title.trim(),
-                              courseName: courseName,
-                              priority: priority,
-                              date: DateTime(
-                                _selectedDate.year,
-                                _selectedDate.month,
-                                _selectedDate.day,
-                              ),
-                            ),
-                          );
-                        },
-                        child: const Text('Add task'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+    var listening = false;
+    StudyTask? task;
+    try {
+      task = await showModalBottomSheet<StudyTask>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: AppColors.bgSurface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-      ),
-    );
-    if (task != null) {
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) {
+            Future<void> dictate() async {
+              if (listening) {
+                await _voiceService.stop();
+                return;
+              }
+              setSheetState(() => listening = true);
+              String cap(String s) => s.length > 60 ? s.substring(0, 60) : s;
+              try {
+                final raw = await _voiceService.listenAndTranscribe(
+                  onPartialResult: (partial) {
+                    if (!sheetContext.mounted) return;
+                    titleController.text = cap(partial);
+                  },
+                );
+                if (sheetContext.mounted) {
+                  titleController.text = cap(raw.extractedText);
+                }
+              } catch (error) {
+                if (sheetContext.mounted) {
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        error is StateError
+                            ? error.message.toString()
+                            : 'Dictation failed. Please try again.',
+                      ),
+                    ),
+                  );
+                }
+              } finally {
+                if (sheetContext.mounted) {
+                  setSheetState(() => listening = false);
+                }
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                20,
+                24,
+                24 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Add a study task',
+                      style: Fonts.h1.copyWith(color: AppColors.textMain),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Task',
+                      style: Fonts.caption.copyWith(color: AppColors.textDim),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: titleController,
+                      autofocus: true,
+                      maxLength: 60,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. Review Chapter 5',
+                        filled: true,
+                        fillColor: AppColors.bgSurface2,
+                        counterText: '',
+                        suffixIcon: IconButton(
+                          tooltip: listening ? 'Stop dictation' : 'Dictate task',
+                          icon: Icon(listening ? Icons.stop : Icons.mic_none),
+                          onPressed: dictate,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Course',
+                      style: Fonts.caption.copyWith(color: AppColors.textDim),
+                    ),
+                    const SizedBox(height: 6),
+                    if (courses.isNotEmpty)
+                      DropdownButtonFormField<String>(
+                        value: courseName,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: AppColors.bgSurface2,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: [
+                          for (final course in courses)
+                            DropdownMenuItem(
+                              value: course.name,
+                              child: Text(course.name),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setSheetState(() => courseName = value);
+                          }
+                        },
+                      ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Time (optional)',
+                      style: Fonts.caption.copyWith(color: AppColors.textDim),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      onChanged: (value) => time = value,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. 7:00 – 7:45 PM',
+                        filled: true,
+                        fillColor: AppColors.bgSurface2,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Priority',
+                      style: Fonts.caption.copyWith(color: AppColors.textDim),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final option in TaskPriority.values)
+                          ChoiceChip(
+                            label: Text(option.label),
+                            selected: priority == option,
+                            onSelected: (_) =>
+                                setSheetState(() => priority = option),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              final title = titleController.text.trim();
+                              if (title.isEmpty) return;
+                              Navigator.of(sheetContext).pop(
+                                StudyTask(
+                                  id: 'manual-${DateTime.now().microsecondsSinceEpoch}',
+                                  timeRange: time.trim().isEmpty
+                                      ? 'Anytime today'
+                                      : time.trim(),
+                                  title: title,
+                                  courseName: courseName,
+                                  priority: priority,
+                                  date: DateTime(
+                                    _selectedDate.year,
+                                    _selectedDate.month,
+                                    _selectedDate.day,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Text('Add task'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } finally {
+      unawaited(_voiceService.cancel());
+      titleController.dispose();
+    }
+    if (task != null && mounted) {
       StudyStore.add([task]);
       setState(() => _selectedDate = task!.date ?? _selectedDate);
     }
@@ -378,9 +411,8 @@ class _HomePageState extends State<OnboardingPage> {
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
-
       // Keep the navbar pinned to the bottom if a text field is added later.
-            resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [

@@ -5,7 +5,7 @@ import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/core/widgets/theme_button.dart';
 import 'package:klugmind/core/widgets/theme_controller.dart';
-import 'package:klugmind/features/flashcards_page/flashcard_view.dart';
+import 'package:klugmind/features/flashcards_page/widgets/flashcard_view.dart';
 import 'package:klugmind/features/flashcards_page/flashcards.dart';
 
 const _cards = [

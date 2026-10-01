@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:klugmind/core/models/material_models.dart';
 import 'package:klugmind/core/services/course_store.dart';
 import 'package:klugmind/core/services/llm_service.dart' as llm;
+import 'package:klugmind/core/services/local_storage.dart';
 import 'package:klugmind/core/services/study_store.dart';
 import 'package:klugmind/core/services/study_intake_service.dart';
 import 'package:klugmind/core/services/voice_service.dart';
@@ -21,12 +22,13 @@ import 'package:klugmind/features/onboarding_page/onboarding.dart';
 import 'package:klugmind/features/onboarding_page/widgets/study_task.dart';
 
 /// Notes → study blocks (if the text has dates) or flashcards + quiz.
-/// Typed text, camera photo (OCR) or device PDF -> StudyIntakeService ->
-/// LLM -> preview -> Today page or FlashcardsPage.
+/// Typed text, voice dictation, camera photo (OCR) or device PDF ->
+/// StudyIntakeService -> LLM -> preview -> Today page or FlashcardsPage.
 class NotesPage extends StatefulWidget {
   const NotesPage({
     super.key,
     this.service,
+    this.voiceService,
     this.capturePhoto,
     this.pickPdf,
     this.onSaveAndStudy,
@@ -35,6 +37,7 @@ class NotesPage extends StatefulWidget {
   });
 
   final StudyIntakeService? service;
+  final VoiceService? voiceService;
   final Future<File?> Function()? capturePhoto;
   final Future<String?> Function()? pickPdf;
   final VoidCallback? onSaveAndStudy;
@@ -49,9 +52,11 @@ class NotesPage extends StatefulWidget {
 
 class _NotesPageState extends State<NotesPage> {
   final _controller = TextEditingController();
-  final _voiceService = VoiceService();
+  late final VoiceService _voiceService =
+      widget.voiceService ?? VoiceService();
   late final StudyIntakeService _service =
       widget.service ?? StudyIntakeService();
+  Future<void>? _voiceFuture;
   String? _selectedCourseName;
   RawMaterial? _raw;
   StructuredExtraction? _result;
@@ -159,9 +164,16 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
-  Future<void> _onVoice() async {
-    if (_loading || _listening) return;
+  Future<void> _onVoice() {
+    if (_loading || _listening) return _voiceFuture ?? Future.value();
+    return _voiceFuture = _dictate();
+  }
+
+  /// Dictation appends to whatever is already in the box.
+  Future<void> _dictate() async {
     setState(() => _listening = true);
+    final prefix = _controller.text.trim();
+    String join(String s) => prefix.isEmpty ? s : '$prefix $s';
     String? courseId;
     for (final course in CourseStore.courses.value) {
       if (course.name == _selectedCourseName) {
@@ -173,10 +185,12 @@ class _NotesPageState extends State<NotesPage> {
       final raw = await _voiceService.listenAndTranscribe(
         courseId: courseId,
         onPartialResult: (partial) {
-          if (mounted) _controller.text = partial;
+          if (mounted) _controller.text = join(partial);
         },
       );
-      if (mounted) _applyRaw(raw);
+      if (mounted) {
+        _applyRaw(raw.copyWith(extractedText: join(raw.extractedText)));
+      }
     } catch (e) {
       if (mounted) _toast(_friendly(e));
     } finally {
@@ -186,6 +200,12 @@ class _NotesPageState extends State<NotesPage> {
 
   Future<void> _generate() async {
     if (_loading) return;
+    // Finish any active dictation so the spoken text is included.
+    if (_listening) {
+      await _voiceService.stop();
+      await _voiceFuture;
+      if (!mounted) return;
+    }
     final text = _controller.text.trim();
     if (text.isEmpty) {
       _toast('Add notes, a PDF, or a photo first.');
@@ -245,6 +265,7 @@ class _NotesPageState extends State<NotesPage> {
 
     // Keep the deck available on the Flashcards tab either way.
     if (r.flashcards.isNotEmpty) {
+      unawaited(LocalStorage.saveDeck(r.flashcards, FlashcardsPage.lastCourse));
       FlashcardsPage.lastDeck = r.flashcards;
       FlashcardsPage.lastCourse = _selectedCourseName ?? widget.courseName;
     }
@@ -267,7 +288,6 @@ class _NotesPageState extends State<NotesPage> {
     }
 
     // No dates -> flashcards.
-    // TODO: persist deck (Hive/Supabase) before navigating.
     widget.onSaveAndStudy?.call();
     Navigator.of(context).push(
       MaterialPageRoute<void>(

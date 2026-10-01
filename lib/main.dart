@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:klugmind/core/services/local_storage.dart';
 import 'package:klugmind/core/widgets/theme_controller.dart';
 import 'package:klugmind/features/home_page/home.dart';
 
@@ -13,8 +14,10 @@ Future<void> main() async {
   } catch (_) {
     // Falls back to LlmService defaults.
   }
+  await LocalStorage.init();
   runApp(const MyApp());
 }
+
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

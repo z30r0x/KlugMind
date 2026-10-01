@@ -9,6 +9,7 @@ import 'package:klugmind/core/services/course_store.dart';
 import 'package:klugmind/core/services/llm_service.dart' as llm;
 import 'package:klugmind/core/services/study_intake_service.dart';
 import 'package:klugmind/core/services/study_store.dart';
+import 'package:klugmind/core/services/voice_service.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/features/flashcards_page/flashcards.dart';
 import 'package:klugmind/features/notes_page/notes.dart';
@@ -87,6 +88,46 @@ class _EmptyLlm extends llm.LlmService {
       '{"assignments":[],"flashcards":[],"quiz_items":[]}';
 }
 
+/// Completes immediately with [text], or when [stop] is called if [hold].
+class _FakeVoice extends VoiceService {
+  _FakeVoice(this.text, {this.hold = false, this.error});
+  final String text;
+  final bool hold;
+  final Object? error;
+  final Completer<void> _stopped = Completer<void>();
+  int stopCalls = 0;
+
+  @override
+  Future<RawMaterial> listenAndTranscribe({
+    String? courseId,
+    void Function(String partialText)? onPartialResult,
+    Duration maxDuration = const Duration(minutes: 3),
+  }) async {
+    if (error != null) throw error!;
+    onPartialResult?.call(text);
+    if (hold) await _stopped.future;
+    return RawMaterial(
+      id: 'v',
+      source: MaterialSource.voice,
+      courseId: courseId,
+      extractedText: text,
+      confidence: .9,
+      capturedAt: DateTime(2026),
+    );
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls++;
+    if (!_stopped.isCompleted) _stopped.complete();
+  }
+
+  @override
+  Future<void> cancel() async {
+    if (!_stopped.isCompleted) _stopped.complete();
+  }
+}
+
 void main() {
   setUp(() {
     CourseStore.reset();
@@ -95,11 +136,13 @@ void main() {
 
   Widget wrap({
     StudyIntakeService? service,
+    VoiceService? voice,
     Future<File?> Function()? photo,
     Future<String?> Function()? pdf,
   }) => MaterialApp(
     home: NotesPage(
       service: service ?? _FakeIntake(),
+      voiceService: voice ?? _FakeVoice(''),
       capturePhoto: photo,
       pickPdf: pdf,
     ),
@@ -255,6 +298,58 @@ void main() {
     await t.tap(find.text('Take photo'));
     await t.pumpAndSettle();
     expect(find.byType(SnackBar), findsOneWidget);
+  });
+
+  // ---- Voice -> flashcards -------------------------------------------------
+
+  testWidgets('dictation text is sent to the model on Generate', (t) async {
+    final svc = _FakeIntake();
+    await t.pumpWidget(
+      wrap(service: svc, voice: _FakeVoice('SN2 is bimolecular')),
+    );
+    await t.tap(find.byIcon(Icons.mic_none));
+    await t.pumpAndSettle();
+    expect(find.text('SN2 is bimolecular'), findsOneWidget);
+    await t.tap(find.text('✨ Generate Flashcards + Quiz'));
+    await t.pumpAndSettle();
+    expect(svc.last?.source, MaterialSource.voice);
+    expect(svc.last?.extractedText, 'SN2 is bimolecular');
+    expect(find.text('Preview — edit before saving'), findsOneWidget);
+    expect(find.text('FLASHCARD 1 OF 2'), findsOneWidget);
+  });
+
+  testWidgets('dictation appends to existing text', (t) async {
+    await t.pumpWidget(wrap(voice: _FakeVoice('second')));
+    await t.enterText(find.byType(TextField), 'first');
+    await t.tap(find.byIcon(Icons.mic_none));
+    await t.pumpAndSettle();
+    expect(find.text('first second'), findsOneWidget);
+  });
+
+  testWidgets('Generate while dictating stops it and uses the spoken text', (
+    t,
+  ) async {
+    final svc = _FakeIntake();
+    final voice = _FakeVoice('live words', hold: true);
+    await t.pumpWidget(wrap(service: svc, voice: voice));
+    await t.tap(find.byIcon(Icons.mic_none));
+    await t.pump();
+    expect(find.byIcon(Icons.stop), findsOneWidget);
+    await t.tap(find.text('✨ Generate Flashcards + Quiz'));
+    await t.pumpAndSettle();
+    expect(voice.stopCalls, 1);
+    expect(svc.last?.extractedText, 'live words');
+    expect(find.text('Preview — edit before saving'), findsOneWidget);
+  });
+
+  testWidgets('dictation error shows a SnackBar and resets the mic', (t) async {
+    await t.pumpWidget(
+      wrap(voice: _FakeVoice('', error: StateError('No speech detected.'))),
+    );
+    await t.tap(find.byIcon(Icons.mic_none));
+    await t.pumpAndSettle();
+    expect(find.text('No speech detected.'), findsOneWidget);
+    expect(find.byIcon(Icons.mic_none), findsOneWidget);
   });
 
   testWidgets('Save & Start Studying opens FlashcardsPage', (t) async {

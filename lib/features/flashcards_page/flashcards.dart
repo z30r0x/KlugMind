@@ -4,7 +4,7 @@ import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
-import 'flashcard_view.dart';
+import 'widgets/flashcard_view.dart';
 
 class FlashcardsPage extends StatelessWidget {
   const FlashcardsPage({
