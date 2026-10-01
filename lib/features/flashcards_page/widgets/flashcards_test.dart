@@ -62,7 +62,7 @@ void main() {
     expect(find.text('A1'), findsOneWidget);
     expect(find.text('Q2?'), findsOneWidget);
     final topBar = t.widget<PageTopBar>(find.byType(PageTopBar));
-    expect(topBar.currentStep, isNull);
+    expect(topBar.currentStep, 3);
     expect(topBar.totalSteps, 5);
     await t.tap(find.text('Start learning').first);
     await t.pumpAndSettle();

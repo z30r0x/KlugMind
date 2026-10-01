@@ -37,7 +37,7 @@ class FlashcardsPage extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            PageTopBar(),
+            PageTopBar(currentStep: 3),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
               child: Row(

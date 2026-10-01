@@ -48,7 +48,7 @@ void main() {
     await t.pumpWidget(wrap());
     expect(find.byType(PageTopBar), findsOneWidget);
     final topBar = t.widget<PageTopBar>(find.byType(PageTopBar));
-    expect(topBar.currentStep, isNull);
+    expect(topBar.currentStep, 4);
     expect(topBar.totalSteps, 5);
     expect(find.byType(StepDots), findsNothing);
     expect(find.byType(ThemeButton), findsOneWidget);

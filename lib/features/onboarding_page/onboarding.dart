@@ -378,60 +378,70 @@ class _HomePageState extends State<OnboardingPage> {
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
-      floatingActionButton: SizedBox(
-        width: 52,
-        height: 52,
-        child: FloatingActionButton(
-          onPressed: _addStudyBlock,
-          tooltip: 'Add task',
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.onPrimary,
-          shape: const CircleBorder(),
-          child: const Icon(Icons.add, size: 30),
-        ),
-      ),
+
       // Keep the navbar pinned to the bottom if a text field is added later.
-      resizeToAvoidBottomInset: false,
+            resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(child: PageTopBar()),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        _Header(date: _selectedDate, onDateTap: _pickDate),
-                        const SizedBox(height: 18),
-                        _ProgressCard(
-                          completed: completedCount,
-                          total: tasks.length,
-                          onStartFocus: _startFocusMode,
-                        ),
-                        Text(
-                          'Study blocks',
-                          style: Fonts.sectionLabel.copyWith(
-                            color: AppColors.textDim,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        for (final task in tasks)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: TaskCard(
-                              task: task,
-                              onTap: () => _toggle(task.id),
+              child: Stack(
+                children: [
+                  CustomScrollView(
+                    slivers: [
+                      SliverToBoxAdapter(child: PageTopBar(currentStep: 1)),
+                      SliverPadding(
+                        // extra bottom space so the last card clears the button
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 84),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            _Header(date: _selectedDate, onDateTap: _pickDate),
+                            const SizedBox(height: 18),
+                            _ProgressCard(
+                              completed: completedCount,
+                              total: tasks.length,
+                              onStartFocus: _startFocusMode,
                             ),
-                          ),
-                      ]),
+                            Text(
+                              'Study blocks',
+                              style: Fonts.sectionLabel.copyWith(
+                                color: AppColors.textDim,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            for (final task in tasks)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: TaskCard(
+                                  task: task,
+                                  onTap: () => _toggle(task.id),
+                                ),
+                              ),
+                          ]),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    right: 20,
+                    bottom: 12,
+                    child: SizedBox(
+                      width: 52,
+                      height: 52,
+                      child: FloatingActionButton(
+                        heroTag: 'add-task',
+                        onPressed: _addStudyBlock,
+                        tooltip: 'Add task',
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.onPrimary,
+                        shape: const CircleBorder(),
+                        child: const Icon(Icons.add, size: 30),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            // Non-const on purpose -- see AppBottomNav's doc comment.
             AppBottomNav(active: AppTab.today),
           ],
         ),

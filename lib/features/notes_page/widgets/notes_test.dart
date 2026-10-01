@@ -115,7 +115,7 @@ void main() {
     expect(find.text('Save & Start Studying'), findsNothing);
     expect(find.byType(PageTopBar), findsOneWidget);
     final topBar = t.widget<PageTopBar>(find.byType(PageTopBar));
-    expect(topBar.currentStep, isNull);
+    expect(topBar.currentStep, 2);
     expect(topBar.totalSteps, 5);
   });
 

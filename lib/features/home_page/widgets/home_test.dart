@@ -26,7 +26,7 @@ void main() {
     expect(find.text('US History 1865–Present'), findsOneWidget);
     final topBar = tester.widget<PageTopBar>(find.byType(PageTopBar));
     expect(topBar.currentStep, 0);
-    expect(topBar.totalSteps, 3);
+    expect(topBar.totalSteps, 5);
     expect(find.byType(StepDots), findsOneWidget);
   });
 

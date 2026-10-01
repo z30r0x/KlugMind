@@ -298,7 +298,7 @@ class _NotesPageState extends State<NotesPage> {
       body: SafeArea(
         child: Column(
           children: [
-            PageTopBar(),
+            PageTopBar(currentStep: 2),
             InkWell(
               onTap: () => Navigator.of(context).maybePop(),
               child: Padding(

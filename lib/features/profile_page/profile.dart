@@ -71,7 +71,8 @@ class _ProfilePageState extends State<ProfilePage> {
       body: SafeArea(
         child: Column(
           children: [
-            PageTopBar(),
+            // Step 4 of 5 (Setup, Today, Notes, Flashcards, Profile).
+            PageTopBar(currentStep: 4),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),

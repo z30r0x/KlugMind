@@ -255,7 +255,7 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: Column(
           children: [
-            PageTopBar(currentStep: 0, totalSteps: 3),
+            PageTopBar(currentStep: 0, totalSteps: 5),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
