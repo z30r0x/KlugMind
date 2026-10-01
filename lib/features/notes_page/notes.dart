@@ -268,6 +268,9 @@ class _NotesPageState extends State<NotesPage> {
       unawaited(LocalStorage.saveDeck(r.flashcards, FlashcardsPage.lastCourse));
       FlashcardsPage.lastDeck = r.flashcards;
       FlashcardsPage.lastCourse = _selectedCourseName ?? widget.courseName;
+      unawaited(
+        LocalStorage.saveDeck(r.flashcards, FlashcardsPage.lastCourse),
+      );
     }
 
     // Dated items -> study blocks on the Today page.
