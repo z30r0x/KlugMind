@@ -527,8 +527,3 @@ android/**/reports/
 - **Editable input before AI generation:** Users can correct OCR or transcription mistakes before generating study material.
 - **Local-first persistence:** Study tasks and saved flashcard decks restore automatically after application restart.
 
-***
-
-## 📜 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
