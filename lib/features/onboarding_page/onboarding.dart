@@ -273,7 +273,7 @@ class _HomePageState extends State<OnboardingPage> {
                     const SizedBox(height: 6),
                     if (courses.isNotEmpty)
                       DropdownButtonFormField<String>(
-                        value: courseName,
+                        initialValue: courseName,
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: AppColors.bgSurface2,

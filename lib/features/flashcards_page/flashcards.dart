@@ -58,12 +58,6 @@ class FlashcardsPage extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (cards.isNotEmpty)
-                    FilledButton.icon(
-                      onPressed: () => _startLearning(context),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 19),
-                      label: const Text('Start learning'),
-                    ),
                 ],
               ),
             ),
