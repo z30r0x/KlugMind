@@ -1,16 +1,11 @@
 // lib/features/profile_page/profile.dart
 import 'package:flutter/material.dart';
+import 'package:klugmind/core/services/course_store.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/core/widgets/theme_controller.dart';
-
-class _ProfileCourse {
-  final String name;
-  final String hoursPerWeek;
-  const _ProfileCourse(this.name, this.hoursPerWeek);
-}
 
 /// Profile screen: avatar + name, three stat cards, the user's courses and
 /// a settings list. The "Dark mode" switch and the top-right theme icon both
@@ -38,31 +33,44 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  static const _courses = [
-    _ProfileCourse('Organic Chemistry II', '6h/wk'),
-    _ProfileCourse('Linear Algebra', '4h/wk'),
-    _ProfileCourse('US History 1865–Present', '3h/wk'),
-  ];
-
   bool _studyReminders = true;
   bool _weeklyEmail = true;
+  bool _signedOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    CourseStore.courses.addListener(_onCoursesChanged);
+  }
+
+  @override
+  void dispose() {
+    CourseStore.courses.removeListener(_onCoursesChanged);
+    super.dispose();
+  }
+
+  void _onCoursesChanged() {
+    if (mounted) setState(() {});
+  }
 
   String get _initials {
-    final parts =
-        widget.name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+    final parts = widget.name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty);
     return parts.take(2).map((p) => p[0].toUpperCase()).join();
   }
 
   @override
   Widget build(BuildContext context) {
     AppColors.sync(context);
+    final courses = CourseStore.courses.value;
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
       body: SafeArea(
         child: Column(
           children: [
-            // No step dots on Profile: just the theme toggle on the right.
             PageTopBar(),
             Expanded(
               child: SingleChildScrollView(
@@ -71,45 +79,63 @@ class _ProfilePageState extends State<ProfilePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _Header(
-                        initials: _initials,
-                        name: widget.name,
-                        subtitle: widget.subtitle),
+                      initials: _initials,
+                      name: widget.name,
+                      subtitle: widget.subtitle,
+                    ),
                     const SizedBox(height: 20),
                     Row(
                       children: [
                         Expanded(
-                            child: _StatCard(
-                                value: '${widget.dayStreak}',
-                                label: 'Day streak')),
+                          child: _StatCard(
+                            value: '${widget.dayStreak}',
+                            label: 'Day streak',
+                          ),
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
-                            child: _StatCard(
-                                value: '${widget.cardsReviewed}',
-                                label: 'Cards reviewed')),
+                          child: _StatCard(
+                            value: '${widget.cardsReviewed}',
+                            label: 'Cards reviewed',
+                          ),
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
-                            child: _StatCard(
-                                value: widget.hoursThisWeek,
-                                label: 'This week')),
+                          child: _StatCard(
+                            value: widget.hoursThisWeek,
+                            label: 'This week',
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 24),
-                    Text('Your courses',
-                        style: Fonts.sectionLabel
-                            .copyWith(color: AppColors.textDim)),
+                    Text(
+                      'Your courses',
+                      style: Fonts.sectionLabel.copyWith(
+                        color: AppColors.textDim,
+                      ),
+                    ),
                     const SizedBox(height: 10),
-                    for (var i = 0; i < _courses.length; i++)
+                    if (courses.isEmpty)
+                      Text(
+                        'No courses added yet.',
+                        style: Fonts.sub.copyWith(color: AppColors.textDim),
+                      ),
+                    for (var i = 0; i < courses.length; i++)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: _CourseRow(
                           color: AppColors.courseColor(i),
-                          course: _courses[i],
+                          course: courses[i],
                         ),
                       ),
                     const SizedBox(height: 14),
-                    Text('Settings',
-                        style: Fonts.sectionLabel
-                            .copyWith(color: AppColors.textDim)),
+                    Text(
+                      'Settings',
+                      style: Fonts.sectionLabel.copyWith(
+                        color: AppColors.textDim,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     // Dark mode: reads and writes the app-wide ThemeController.
                     ValueListenableBuilder<ThemeMode>(
@@ -118,8 +144,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         title: 'Dark mode',
                         subtitle: 'Match the app theme',
                         value: ThemeController.isDark(context),
-                        onChanged: (v) => ThemeController.mode.value =
-                            v ? ThemeMode.dark : ThemeMode.light,
+                        onChanged: (v) => ThemeController.mode.value = v
+                            ? ThemeMode.dark
+                            : ThemeMode.light,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -135,6 +162,23 @@ class _ProfilePageState extends State<ProfilePage> {
                       subtitle: 'Sent every Sunday evening',
                       value: _weeklyEmail,
                       onChanged: (v) => setState(() => _weeklyEmail = v),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () =>
+                            setState(() => _signedOut = !_signedOut),
+                        style: TextButton.styleFrom(
+                          backgroundColor: AppColors.priorityCriticalBg,
+                          foregroundColor: AppColors.priorityCritical,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(_signedOut ? 'Sign back in' : 'Sign out'),
+                      ),
                     ),
                   ],
                 ),
@@ -152,8 +196,11 @@ class _ProfilePageState extends State<ProfilePage> {
 // ---------------------------------------------------------------------------
 
 class _Header extends StatelessWidget {
-  const _Header(
-      {required this.initials, required this.name, required this.subtitle});
+  const _Header({
+    required this.initials,
+    required this.name,
+    required this.subtitle,
+  });
   final String initials, name, subtitle;
 
   @override
@@ -170,9 +217,13 @@ class _Header extends StatelessWidget {
               color: AppColors.primary,
               shape: BoxShape.circle,
             ),
-            child: Text(initials,
-                style: Fonts.h1Lg
-                    .copyWith(fontSize: 28, color: AppColors.onPrimary)),
+            child: Text(
+              initials,
+              style: Fonts.h1Lg.copyWith(
+                fontSize: 28,
+                color: AppColors.onPrimary,
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           Text(name, style: Fonts.h1.copyWith(color: AppColors.textMain)),
@@ -201,12 +252,15 @@ class _StatCard extends StatelessWidget {
         children: [
           Text(value, style: Fonts.h1.copyWith(color: AppColors.textMain)),
           const SizedBox(height: 4),
-          Text(label.toUpperCase(),
-              textAlign: TextAlign.center,
-              style: Fonts.chip.copyWith(
-                  fontSize: 9.5,
-                  letterSpacing: .5,
-                  color: AppColors.textDim)),
+          Text(
+            label.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: Fonts.chip.copyWith(
+              fontSize: 9.5,
+              letterSpacing: .5,
+              color: AppColors.textDim,
+            ),
+          ),
         ],
       ),
     );
@@ -216,7 +270,7 @@ class _StatCard extends StatelessWidget {
 class _CourseRow extends StatelessWidget {
   const _CourseRow({required this.color, required this.course});
   final Color color;
-  final _ProfileCourse course;
+  final AppCourse course;
 
   @override
   Widget build(BuildContext context) {
@@ -236,14 +290,19 @@ class _CourseRow extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(course.name,
-                style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textMain)),
+            child: Text(
+              course.name,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMain,
+              ),
+            ),
           ),
-          Text(course.hoursPerWeek,
-              style: TextStyle(fontSize: 12, color: AppColors.textFaint)),
+          Text(
+            course.hoursPerWeek,
+            style: TextStyle(fontSize: 12, color: AppColors.textFaint),
+          ),
         ],
       ),
     );
@@ -277,14 +336,19 @@ class _SettingRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textMain)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textMain,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(subtitle,
-                    style: Fonts.caption.copyWith(color: AppColors.textDim)),
+                Text(
+                  subtitle,
+                  style: Fonts.caption.copyWith(color: AppColors.textDim),
+                ),
               ],
             ),
           ),
@@ -297,8 +361,7 @@ class _SettingRow extends StatelessWidget {
                   ? AppColors.primary
                   : AppColors.divider,
             ),
-            trackOutlineColor:
-                const WidgetStatePropertyAll(Colors.transparent),
+            trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
           ),
         ],
       ),

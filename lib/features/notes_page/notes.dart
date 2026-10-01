@@ -7,9 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:klugmind/core/models/material_models.dart';
+import 'package:klugmind/core/services/course_store.dart';
 import 'package:klugmind/core/services/llm_service.dart' as llm;
 import 'package:klugmind/core/services/study_store.dart';
 import 'package:klugmind/core/services/study_intake_service.dart';
+import 'package:klugmind/core/services/voice_service.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
@@ -47,17 +49,27 @@ class NotesPage extends StatefulWidget {
 
 class _NotesPageState extends State<NotesPage> {
   final _controller = TextEditingController();
+  final _voiceService = VoiceService();
   late final StudyIntakeService _service =
       widget.service ?? StudyIntakeService();
+  String? _selectedCourseName;
   RawMaterial? _raw;
   StructuredExtraction? _result;
   bool _loading = false;
+  bool _listening = false;
   bool _lowConfidence = false;
   int? _downloadPct;
 
   @override
   void initState() {
     super.initState();
+    final courses = CourseStore.courses.value;
+    _selectedCourseName =
+        courses.any((course) => course.name == widget.courseName)
+        ? widget.courseName
+        : courses.isEmpty
+        ? widget.courseName
+        : courses.first.name;
     final r = widget.initialRaw;
     if (r != null) {
       _raw = r;
@@ -68,14 +80,17 @@ class _NotesPageState extends State<NotesPage> {
 
   @override
   void dispose() {
+    unawaited(_voiceService.cancel());
     _controller.dispose();
     if (widget.service == null) _service.dispose();
     super.dispose();
   }
 
   Future<File?> _defaultCapture() async {
-    final x = await ImagePicker()
-        .pickImage(source: ImageSource.camera, imageQuality: 90);
+    final x = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      imageQuality: 90,
+    );
     return x == null ? null : File(x.path);
   }
 
@@ -96,6 +111,7 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   String _friendly(Object e) {
+    if (e is StateError) return e.message.toString();
     if (e is llm.HttpException ||
         e is TimeoutException ||
         e is SocketException) {
@@ -143,6 +159,31 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
+  Future<void> _onVoice() async {
+    if (_loading || _listening) return;
+    setState(() => _listening = true);
+    String? courseId;
+    for (final course in CourseStore.courses.value) {
+      if (course.name == _selectedCourseName) {
+        courseId = course.id;
+        break;
+      }
+    }
+    try {
+      final raw = await _voiceService.listenAndTranscribe(
+        courseId: courseId,
+        onPartialResult: (partial) {
+          if (mounted) _controller.text = partial;
+        },
+      );
+      if (mounted) _applyRaw(raw);
+    } catch (e) {
+      if (mounted) _toast(_friendly(e));
+    } finally {
+      if (mounted) setState(() => _listening = false);
+    }
+  }
+
   Future<void> _generate() async {
     if (_loading) return;
     final text = _controller.text.trim();
@@ -156,12 +197,15 @@ class _NotesPageState extends State<NotesPage> {
     });
     try {
       // First run downloads the on-device model; no-op afterwards.
-      await _service.prepareModel(onProgress: (p) {
-        if (mounted) setState(() => _downloadPct = p);
-      });
+      await _service.prepareModel(
+        onProgress: (p) {
+          if (mounted) setState(() => _downloadPct = p);
+        },
+      );
       if (mounted) setState(() => _downloadPct = null);
 
-      final base = _raw ??
+      final base =
+          _raw ??
           RawMaterial(
             id: DateTime.now().microsecondsSinceEpoch.toString(),
             source: MaterialSource.typedText,
@@ -171,7 +215,10 @@ class _NotesPageState extends State<NotesPage> {
           );
       final result = await _service.analyze(base.copyWith(extractedText: text));
       if (!mounted) return;
-      final hasBlocks = StudyStore.blocksFrom(result.assignments).isNotEmpty;
+      final hasBlocks = StudyStore.blocksFrom(
+        result.assignments,
+        courseName: _selectedCourseName,
+      ).isNotEmpty;
       if (result.flashcards.isEmpty && !hasBlocks) {
         setState(() => _loading = false);
         _toast("Couldn't make cards from that. Edit the text and try again.");
@@ -199,16 +246,21 @@ class _NotesPageState extends State<NotesPage> {
     // Keep the deck available on the Flashcards tab either way.
     if (r.flashcards.isNotEmpty) {
       FlashcardsPage.lastDeck = r.flashcards;
-      FlashcardsPage.lastCourse = widget.courseName;
+      FlashcardsPage.lastCourse = _selectedCourseName ?? widget.courseName;
     }
 
     // Dated items -> study blocks on the Today page.
-    final blocks = StudyStore.blocksFrom(r.assignments);
+    final blocks = StudyStore.blocksFrom(
+      r.assignments,
+      courseName: _selectedCourseName,
+    );
     if (blocks.isNotEmpty) {
       StudyStore.add(blocks);
       widget.onSaveAndStudy?.call();
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(builder: (_) => const OnboardingPage()),
+        MaterialPageRoute<void>(
+          builder: (_) => OnboardingPage(initialDate: blocks.first.date),
+        ),
         (_) => false,
       );
       return;
@@ -217,10 +269,14 @@ class _NotesPageState extends State<NotesPage> {
     // No dates -> flashcards.
     // TODO: persist deck (Hive/Supabase) before navigating.
     widget.onSaveAndStudy?.call();
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) =>
-          FlashcardsPage(cards: r.flashcards, courseName: widget.courseName),
-    ));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FlashcardsPage(
+          cards: r.flashcards,
+          courseName: _selectedCourseName ?? widget.courseName,
+        ),
+      ),
+    );
   }
 
   @override
@@ -229,7 +285,10 @@ class _NotesPageState extends State<NotesPage> {
     final result = _result;
     final blocks = result == null
         ? const <StudyTask>[]
-        : StudyStore.blocksFrom(result.assignments);
+        : StudyStore.blocksFrom(
+            result.assignments,
+            courseName: _selectedCourseName,
+          );
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
 
     return Scaffold(
@@ -239,19 +298,21 @@ class _NotesPageState extends State<NotesPage> {
       body: SafeArea(
         child: Column(
           children: [
-            PageTopBar(currentStep: 1),
+            PageTopBar(),
             InkWell(
               onTap: () => Navigator.of(context).maybePop(),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('← Back to plan',
-                      style: Fonts.sectionLabel.copyWith(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDim,
-                      )),
+                  child: Text(
+                    '← Back to plan',
+                    style: Fonts.sectionLabel.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDim,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -261,8 +322,10 @@ class _NotesPageState extends State<NotesPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Notes → Flashcards & Quiz',
-                        style: Fonts.h1.copyWith(color: AppColors.textMain)),
+                    Text(
+                      'Notes → Flashcards & Quiz',
+                      style: Fonts.h1.copyWith(color: AppColors.textMain),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       "Paste notes or upload a file — we'll generate cards",
@@ -276,16 +339,32 @@ class _NotesPageState extends State<NotesPage> {
                       maxLength: StudyIntakeService.maxChars,
                       keyboardType: TextInputType.multiline,
                       cursorColor: AppColors.primary,
-                      style: Fonts.sub
-                          .copyWith(height: 1.3, color: AppColors.textMain),
+                      style: Fonts.sub.copyWith(
+                        height: 1.3,
+                        color: AppColors.textMain,
+                      ),
                       decoration: InputDecoration(
                         hintText:
                             'Paste your notes here, or upload a PDF / take a photo of your notes…',
-                        hintStyle: Fonts.sub
-                            .copyWith(height: 1.3, color: AppColors.textFaint),
+                        hintStyle: Fonts.sub.copyWith(
+                          height: 1.3,
+                          color: AppColors.textFaint,
+                        ),
                         filled: true,
                         fillColor: AppColors.bgSurface,
                         counterText: '',
+                        suffixIcon: IconButton(
+                          tooltip: _listening
+                              ? 'Stop dictation'
+                              : 'Dictate notes',
+                          onPressed: _listening
+                              ? () => _voiceService.stop()
+                              : _onVoice,
+                          icon: Icon(
+                            _listening ? Icons.stop : Icons.mic_none,
+                            color: AppColors.primary,
+                          ),
+                        ),
                         contentPadding: const EdgeInsets.all(14),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -301,14 +380,18 @@ class _NotesPageState extends State<NotesPage> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(Icons.warning_amber_rounded,
-                              size: 16, color: AppColors.priorityHigh),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 16,
+                            color: AppColors.priorityHigh,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Low-confidence scan — check the text for OCR mistakes.',
-                              style: Fonts.caption
-                                  .copyWith(color: AppColors.priorityHigh),
+                              style: Fonts.caption.copyWith(
+                                color: AppColors.priorityHigh,
+                              ),
                             ),
                           ),
                         ],
@@ -318,12 +401,18 @@ class _NotesPageState extends State<NotesPage> {
                     Row(
                       children: [
                         Expanded(
-                            child: _UploadButton(
-                                label: 'Upload PDF', onTap: _onPdf)),
+                          child: _UploadButton(
+                            label: 'Upload PDF',
+                            onTap: _onPdf,
+                          ),
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
-                            child: _UploadButton(
-                                label: 'Take photo', onTap: _onPhoto)),
+                          child: _UploadButton(
+                            label: 'Take photo',
+                            onTap: _onPhoto,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 14),
@@ -337,9 +426,12 @@ class _NotesPageState extends State<NotesPage> {
                     if (result != null) ...[
                       Padding(
                         padding: const EdgeInsets.only(top: 24, bottom: 10),
-                        child: Text('Preview — edit before saving',
-                            style: Fonts.sectionLabel
-                                .copyWith(color: AppColors.textDim)),
+                        child: Text(
+                          'Preview — edit before saving',
+                          style: Fonts.sectionLabel.copyWith(
+                            color: AppColors.textDim,
+                          ),
+                        ),
                       ),
                       if (blocks.isNotEmpty) ...[
                         for (final b in blocks)
@@ -349,17 +441,21 @@ class _NotesPageState extends State<NotesPage> {
                           ),
                         const SizedBox(height: 8),
                         _SuccessButton(
-                            label: 'Add to my plan', onTap: _saveAndStudy),
+                          label: 'Add to my plan',
+                          onTap: _saveAndStudy,
+                        ),
                       ] else ...[
                         _FlashPreview(
-                            card: result.flashcards.first,
-                            total: result.flashcards.length),
+                          card: result.flashcards.first,
+                          total: result.flashcards.length,
+                        ),
                         const SizedBox(height: 12),
                         _QuizRow(count: result.quizItems.length),
                         const SizedBox(height: 16),
                         _SuccessButton(
-                            label: 'Save & Start Studying',
-                            onTap: _saveAndStudy),
+                          label: 'Save & Start Studying',
+                          onTap: _saveAndStudy,
+                        ),
                       ],
                     ],
                   ],
@@ -390,9 +486,12 @@ class _UploadButton extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(11),
           child: Center(
-            child: Text(label,
-                style: Fonts.sectionLabel
-                    .copyWith(color: AppColors.onPrimaryContainer)),
+            child: Text(
+              label,
+              style: Fonts.sectionLabel.copyWith(
+                color: AppColors.onPrimaryContainer,
+              ),
+            ),
           ),
         ),
       ),
@@ -401,8 +500,11 @@ class _UploadButton extends StatelessWidget {
 }
 
 class _GenerateButton extends StatelessWidget {
-  const _GenerateButton(
-      {required this.loading, required this.onTap, this.label = 'Generating…'});
+  const _GenerateButton({
+    required this.loading,
+    required this.onTap,
+    this.label = 'Generating…',
+  });
   final bool loading;
   final String label;
   final VoidCallback onTap;
@@ -433,8 +535,9 @@ class _GenerateButton extends StatelessWidget {
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: AppColors.onPrimary,
-                              backgroundColor:
-                                  AppColors.onPrimary.withAlpha(102),
+                              backgroundColor: AppColors.onPrimary.withAlpha(
+                                102,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -468,13 +571,19 @@ class _BlockPreview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(task.timeRange,
-              style: Fonts.caption.copyWith(color: AppColors.textFaint)),
+          Text(
+            task.timeRange,
+            style: Fonts.caption.copyWith(color: AppColors.textFaint),
+          ),
           const SizedBox(height: 4),
-          Text(task.title,
-              style: Fonts.bodyBold.copyWith(color: AppColors.textMain)),
-          Text(task.courseName,
-              style: Fonts.caption.copyWith(color: AppColors.textDim)),
+          Text(
+            task.title,
+            style: Fonts.bodyBold.copyWith(color: AppColors.textMain),
+          ),
+          Text(
+            task.courseName,
+            style: Fonts.caption.copyWith(color: AppColors.textDim),
+          ),
         ],
       ),
     );
@@ -500,15 +609,22 @@ class _FlashPreview extends StatelessWidget {
         children: [
           Opacity(
             opacity: .75,
-            child: Text('FLASHCARD 1 OF $total',
-                style: Fonts.chip.copyWith(
-                    fontSize: 11, color: AppColors.onPrimaryContainer)),
+            child: Text(
+              'FLASHCARD 1 OF $total',
+              style: Fonts.chip.copyWith(
+                fontSize: 11,
+                color: AppColors.onPrimaryContainer,
+              ),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             card.question,
             style: Fonts.bodyBold.copyWith(
-                fontSize: 15, height: 1.4, color: AppColors.onPrimaryContainer),
+              fontSize: 15,
+              height: 1.4,
+              color: AppColors.onPrimaryContainer,
+            ),
           ),
         ],
       ),
@@ -543,9 +659,13 @@ class _QuizRow extends StatelessWidget {
             child: const Text('📝', style: TextStyle(fontSize: 16)),
           ),
           const SizedBox(width: 12),
-          Text('$count-question quiz ready',
-              style: Fonts.bodyBold
-                  .copyWith(fontSize: 14, color: AppColors.textMain)),
+          Text(
+            '$count-question quiz ready',
+            style: Fonts.bodyBold.copyWith(
+              fontSize: 14,
+              color: AppColors.textMain,
+            ),
+          ),
         ],
       ),
     );
@@ -570,8 +690,10 @@ class _SuccessButton extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(15),
             child: Center(
-              child: Text(label,
-                  style: Fonts.bodyBold.copyWith(color: AppColors.onAccent)),
+              child: Text(
+                label,
+                style: Fonts.bodyBold.copyWith(color: AppColors.onAccent),
+              ),
             ),
           ),
         ),

@@ -42,9 +42,9 @@ class AppBottomNav extends StatelessWidget {
     final Widget? page = switch (to) {
       AppTab.notes => const NotesPage(),
       AppTab.flashcards => FlashcardsPage(
-          cards: FlashcardsPage.lastDeck,
-          courseName: FlashcardsPage.lastCourse,
-        ),
+        cards: FlashcardsPage.lastDeck,
+        courseName: FlashcardsPage.lastCourse,
+      ),
       AppTab.profile => const ProfilePage(),
       AppTab.today => null,
     };
@@ -81,8 +81,11 @@ class AppBottomNav extends StatelessWidget {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem(
-      {required this.label, required this.active, required this.onTap});
+  const _NavItem({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
 
   final String label;
   final bool active;
@@ -103,11 +106,14 @@ class _NavItem extends StatelessWidget {
               decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
             const SizedBox(height: 4),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    color: color)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
           ],
         ),
       ),

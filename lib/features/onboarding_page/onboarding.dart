@@ -1,75 +1,44 @@
 // lib/features/onboarding_page/onboarding.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:klugmind/core/services/course_store.dart';
 import 'package:klugmind/core/services/study_store.dart';
+import 'package:klugmind/core/services/voice_service.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/app_bottom_nav.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
+import 'package:klugmind/features/flashcards_page/flashcard_view.dart';
+import 'package:klugmind/features/flashcards_page/flashcards.dart';
 import 'widgets/study_task.dart';
 
-/// "Today's Plan" home screen -- header (with editable date) + streak
-/// badge, a checkable task list, and the "I fell behind" re-plan entry
-/// point.
+/// "Today's Plan" home screen with date-specific example and imported tasks.
 class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({super.key});
+  const OnboardingPage({super.key, this.initialDate});
+
+  final DateTime? initialDate;
 
   @override
   State<OnboardingPage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<OnboardingPage> {
-  DateTime _selectedDate = DateTime.now();
-
-  final List<StudyTask> _tasks = [
-    const StudyTask(
-      id: '1',
-      timeRange: '9:00 – 9:50 AM',
-      title: 'Orgo Ch. 12 reaction mechanisms',
-      courseName: 'Organic Chemistry II',
-      priority: TaskPriority.critical,
-      done: true,
-    ),
-    const StudyTask(
-      id: '2',
-      timeRange: '10:15 – 11:00 AM',
-      title: 'Linear Algebra pset 6 review',
-      courseName: 'Linear Algebra',
-      priority: TaskPriority.high,
-      done: true,
-    ),
-    const StudyTask(
-      id: '3',
-      timeRange: '1:00 – 1:45 PM',
-      title: 'Flashcards: Reconstruction Era',
-      courseName: 'US History',
-      priority: TaskPriority.medium,
-      done: true,
-    ),
-    const StudyTask(
-      id: '4',
-      timeRange: '3:30 – 4:15 PM',
-      title: 'Read Ch. 14 + take notes',
-      courseName: 'US History',
-      priority: TaskPriority.low,
-    ),
-    const StudyTask(
-      id: '5',
-      timeRange: '6:00 – 6:30 PM',
-      title: 'Review flashcard deck: Orgo',
-      courseName: 'Organic Chemistry II',
-      priority: TaskPriority.low,
-    ),
-  ];
+  late DateTime _selectedDate;
+  final Map<String, bool> _exampleCompletion = {};
+  final _voiceService = VoiceService();
 
   @override
   void initState() {
     super.initState();
+    _selectedDate = widget.initialDate ?? DateTime.now();
     StudyStore.tasks.addListener(_onPlan);
   }
 
   @override
   void dispose() {
     StudyStore.tasks.removeListener(_onPlan);
+    unawaited(_voiceService.cancel());
     super.dispose();
   }
 
@@ -78,12 +47,112 @@ class _HomePageState extends State<OnboardingPage> {
   }
 
   void _toggle(String id) {
-    if (StudyStore.toggle(id)) return; // task came from the store
+    if (StudyStore.toggle(id)) return;
+    final current = _tasksForDate(
+      _selectedDate,
+    ).firstWhere((task) => task.id == id).done;
     setState(() {
-      final i = _tasks.indexWhere((t) => t.id == id);
-      if (i == -1) return;
-      _tasks[i] = _tasks[i].copyWith(done: !_tasks[i].done);
+      _exampleCompletion[id] = !current;
     });
+  }
+
+  List<StudyTask> _tasksForDate(DateTime date) {
+    final day = DateTime(date.year, date.month, date.day);
+    final dayIndex = day.difference(DateTime(day.year)).inDays % 3;
+    final courses = CourseStore.courses.value;
+    final examples = switch (dayIndex) {
+      0 => const [
+        (
+          'Orgo Ch. 12 reaction mechanisms',
+          '9:00 – 9:50 AM',
+          TaskPriority.critical,
+          true,
+        ),
+        (
+          'Linear Algebra pset 6 review',
+          '10:15 – 11:00 AM',
+          TaskPriority.high,
+          true,
+        ),
+        (
+          'Flashcards: Reconstruction Era',
+          '1:00 – 1:45 PM',
+          TaskPriority.medium,
+          true,
+        ),
+        ('Read Ch. 14 + take notes', '3:30 – 4:15 PM', TaskPriority.low, false),
+        (
+          'Review flashcard deck: Orgo',
+          '6:00 – 6:30 PM',
+          TaskPriority.low,
+          false,
+        ),
+      ],
+      1 => const [
+        ('Preview the next lecture', '9:00 – 9:30 AM', TaskPriority.low, false),
+        (
+          'Complete practice questions',
+          '10:00 – 10:50 AM',
+          TaskPriority.high,
+          false,
+        ),
+        ('Review key terms', '1:00 – 1:30 PM', TaskPriority.medium, false),
+        ('Summarize the lecture', '3:00 – 3:45 PM', TaskPriority.medium, false),
+        (
+          'Preview tomorrow\'s assignment',
+          '6:00 – 6:30 PM',
+          TaskPriority.low,
+          false,
+        ),
+      ],
+      _ => const [
+        (
+          'Summarize this week\'s notes',
+          '9:00 – 9:45 AM',
+          TaskPriority.medium,
+          false,
+        ),
+        (
+          'Work through the problem set',
+          '10:30 – 11:20 AM',
+          TaskPriority.high,
+          false,
+        ),
+        (
+          'Prepare for the next quiz',
+          '1:00 – 1:45 PM',
+          TaskPriority.critical,
+          false,
+        ),
+        (
+          'Review marked questions',
+          '3:30 – 4:00 PM',
+          TaskPriority.medium,
+          false,
+        ),
+        ('Make a short recap sheet', '6:00 – 6:30 PM', TaskPriority.low, false),
+      ],
+    };
+    final sampleTasks = [
+      for (var i = 0; i < examples.length; i++)
+        StudyTask(
+          id: 'sample-${day.year}-${day.month}-${day.day}-$i',
+          timeRange: examples[i].$2,
+          title: examples[i].$1,
+          courseName: courses.isEmpty
+              ? 'Independent study'
+              : courses[(dayIndex + i) % courses.length].name,
+          priority: examples[i].$3,
+          done:
+              _exampleCompletion['sample-${day.year}-${day.month}-${day.day}-$i'] ??
+              examples[i].$4,
+          date: day,
+        ),
+    ];
+    final importedTasks = StudyStore.tasks.value.where(
+      (task) => task.date != null && DateUtils.isSameDay(task.date, day),
+    );
+    return [...importedTasks, ...sampleTasks];
   }
 
   Future<void> _pickDate() async {
@@ -98,14 +167,229 @@ class _HomePageState extends State<OnboardingPage> {
     }
   }
 
+  Future<void> _addStudyBlock() async {
+    final courses = CourseStore.courses.value;
+    var courseName = courses.isEmpty ? 'Independent study' : courses.first.name;
+    var title = '';
+    var time = '';
+    var priority = TaskPriority.medium;
+    final task = await showModalBottomSheet<StudyTask>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.bgSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            24 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Add a study task',
+                  style: Fonts.h1.copyWith(color: AppColors.textMain),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Task',
+                  style: Fonts.caption.copyWith(color: AppColors.textDim),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  autofocus: true,
+                  maxLength: 60,
+                  onChanged: (value) => title = value,
+                  decoration: InputDecoration(
+                    hintText: 'e.g. Review Chapter 5',
+                    filled: true,
+                    fillColor: AppColors.bgSurface2,
+                    counterText: '',
+                    suffixIcon: IconButton(
+                      tooltip: 'Dictate task',
+                      icon: const Icon(Icons.mic_none),
+                      onPressed: () async {
+                        try {
+                          await _voiceService.listenAndTranscribe(
+                            onPartialResult: (partial) {
+                              title = partial;
+                              setSheetState(() {});
+                            },
+                          );
+                        } catch (error) {
+                          if (sheetContext.mounted) {
+                            ScaffoldMessenger.of(sheetContext).showSnackBar(
+                              SnackBar(content: Text(error.toString())),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Course',
+                  style: Fonts.caption.copyWith(color: AppColors.textDim),
+                ),
+                const SizedBox(height: 6),
+                if (courses.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    value: courseName,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: AppColors.bgSurface2,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: [
+                      for (final course in courses)
+                        DropdownMenuItem(
+                          value: course.name,
+                          child: Text(course.name),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setSheetState(() => courseName = value);
+                      }
+                    },
+                  ),
+                const SizedBox(height: 10),
+                Text(
+                  'Time (optional)',
+                  style: Fonts.caption.copyWith(color: AppColors.textDim),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  onChanged: (value) => time = value,
+                  decoration: InputDecoration(
+                    hintText: 'e.g. 7:00 – 7:45 PM',
+                    filled: true,
+                    fillColor: AppColors.bgSurface2,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Priority',
+                  style: Fonts.caption.copyWith(color: AppColors.textDim),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final option in TaskPriority.values)
+                      ChoiceChip(
+                        label: Text(option.label),
+                        selected: priority == option,
+                        onSelected: (_) =>
+                            setSheetState(() => priority = option),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
+                          if (title.trim().isEmpty) return;
+                          Navigator.of(sheetContext).pop(
+                            StudyTask(
+                              id: 'manual-${DateTime.now().microsecondsSinceEpoch}',
+                              timeRange: time.trim().isEmpty
+                                  ? 'Anytime today'
+                                  : time.trim(),
+                              title: title.trim(),
+                              courseName: courseName,
+                              priority: priority,
+                              date: DateTime(
+                                _selectedDate.year,
+                                _selectedDate.month,
+                                _selectedDate.day,
+                              ),
+                            ),
+                          );
+                        },
+                        child: const Text('Add task'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (task != null) {
+      StudyStore.add([task]);
+      setState(() => _selectedDate = task!.date ?? _selectedDate);
+    }
+  }
+
+  void _startFocusMode() {
+    final deck = FlashcardsPage.lastDeck;
+    if (deck.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create flashcards to start focus mode.')),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FlashcardSession(
+          cards: deck,
+          courseName: FlashcardsPage.lastCourse,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Syncs AppColors' static getters to the current brightness for this
     // entire build pass -- every widget below reads AppColors.xxx directly.
     AppColors.sync(context);
+    final tasks = _tasksForDate(_selectedDate);
+    final completedCount = tasks.where((task) => task.done).length;
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
+      floatingActionButton: SizedBox(
+        width: 52,
+        height: 52,
+        child: FloatingActionButton(
+          onPressed: _addStudyBlock,
+          tooltip: 'Add task',
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
+          shape: const CircleBorder(),
+          child: const Icon(Icons.add, size: 30),
+        ),
+      ),
       // Keep the navbar pinned to the bottom if a text field is added later.
       resizeToAvoidBottomInset: false,
       body: SafeArea(
@@ -114,19 +398,26 @@ class _HomePageState extends State<OnboardingPage> {
             Expanded(
               child: CustomScrollView(
                 slivers: [
-                  // Step 2 of 2: HomePage (course setup) -> here.
-                  SliverToBoxAdapter(child: PageTopBar(currentStep: 1)),
+                  SliverToBoxAdapter(child: PageTopBar()),
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
                         _Header(date: _selectedDate, onDateTap: _pickDate),
                         const SizedBox(height: 18),
-                        Text('Study blocks',
-                            style: Fonts.sectionLabel
-                                .copyWith(color: AppColors.textDim)),
+                        _ProgressCard(
+                          completed: completedCount,
+                          total: tasks.length,
+                          onStartFocus: _startFocusMode,
+                        ),
+                        Text(
+                          'Study blocks',
+                          style: Fonts.sectionLabel.copyWith(
+                            color: AppColors.textDim,
+                          ),
+                        ),
                         const SizedBox(height: 10),
-                        for (final task in [..._tasks, ...StudyStore.tasks.value])
+                        for (final task in tasks)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: TaskCard(
@@ -134,8 +425,6 @@ class _HomePageState extends State<OnboardingPage> {
                               onTap: () => _toggle(task.id),
                             ),
                           ),
-                        const SizedBox(height: 6),
-                        const _BehindButton(),
                       ]),
                     ),
                   ),
@@ -154,6 +443,66 @@ class _HomePageState extends State<OnboardingPage> {
 // ---------------------------------------------------------------------------
 // Header
 // ---------------------------------------------------------------------------
+
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({
+    required this.completed,
+    required this.total,
+    required this.onStartFocus,
+  });
+
+  final int completed;
+  final int total;
+  final VoidCallback onStartFocus;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 22),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$completed of $total study blocks done',
+            style: Fonts.bodyBold.copyWith(color: AppColors.onPrimary),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: total == 0 ? 0 : completed / total,
+              minHeight: 8,
+              color: AppColors.onPrimary,
+              backgroundColor: AppColors.onPrimary.withAlpha(64),
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onStartFocus,
+              icon: const Icon(Icons.play_arrow_rounded, size: 18),
+              label: const Text('Start Focus Mode'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.onPrimary,
+                foregroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _Header extends StatelessWidget {
   const _Header({required this.date, required this.onDateTap});
@@ -191,54 +540,64 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Today's Plan",
-                style: Fonts.h1.copyWith(color: AppColors.textMain)),
-            const SizedBox(height: 4),
-            Semantics(
-              button: true,
-              label: 'Change date, currently $_formatted',
-              child: InkWell(
-                onTap: onDateTap,
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_formatted,
-                          style: Fonts.sub.copyWith(color: AppColors.textDim)),
-                      const SizedBox(width: 4),
-                      Icon(Icons.edit_calendar_outlined,
-                          size: 14, color: AppColors.textDim),
-                    ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Today's Plan",
+                style: Fonts.h1.copyWith(color: AppColors.textMain),
+              ),
+              const SizedBox(height: 4),
+              Semantics(
+                button: true,
+                label: 'Change date, currently $_formatted',
+                child: InkWell(
+                  onTap: onDateTap,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _formatted,
+                          style: Fonts.sub.copyWith(color: AppColors.textDim),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.edit_calendar_outlined,
+                          size: 14,
+                          color: AppColors.textDim,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.primarySoft,
-            borderRadius: BorderRadius.circular(999),
+            ],
           ),
-          child: Text(
-            '🔥 7 day streak',
-            style: Fonts.chip.copyWith(
-              fontSize: 11.5,
-              color: AppColors.onPrimaryContainer,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '🔥 7 day streak',
+              style: Fonts.chip.copyWith(
+                fontSize: 11.5,
+                color: AppColors.onPrimaryContainer,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -254,18 +613,18 @@ class TaskCard extends StatelessWidget {
   final VoidCallback onTap;
 
   static Color _fg(TaskPriority p) => switch (p) {
-        TaskPriority.critical => AppColors.priorityCritical,
-        TaskPriority.high => AppColors.priorityHigh,
-        TaskPriority.medium => AppColors.priorityMedium,
-        TaskPriority.low => AppColors.priorityLow,
-      };
+    TaskPriority.critical => AppColors.priorityCritical,
+    TaskPriority.high => AppColors.priorityHigh,
+    TaskPriority.medium => AppColors.priorityMedium,
+    TaskPriority.low => AppColors.priorityLow,
+  };
 
   static Color _bg(TaskPriority p) => switch (p) {
-        TaskPriority.critical => AppColors.priorityCriticalBg,
-        TaskPriority.high => AppColors.priorityHighBg,
-        TaskPriority.medium => AppColors.priorityMediumBg,
-        TaskPriority.low => AppColors.priorityLowBg,
-      };
+    TaskPriority.critical => AppColors.priorityCriticalBg,
+    TaskPriority.high => AppColors.priorityHighBg,
+    TaskPriority.medium => AppColors.priorityMediumBg,
+    TaskPriority.low => AppColors.priorityLowBg,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -292,16 +651,19 @@ class TaskCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(task.timeRange,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textFaint,
-                        )),
+                    Text(
+                      task.timeRange,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textFaint,
+                      ),
+                    ),
                     _PriorityChip(
-                        label: task.priority.label,
-                        fg: _fg(task.priority),
-                        bg: _bg(task.priority)),
+                      label: task.priority.label,
+                      fg: _fg(task.priority),
+                      bg: _bg(task.priority),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -328,9 +690,13 @@ class TaskCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(task.courseName,
-                              style: TextStyle(
-                                  fontSize: 11.5, color: AppColors.textDim)),
+                          Text(
+                            task.courseName,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textDim,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -346,8 +712,11 @@ class TaskCard extends StatelessWidget {
 }
 
 class _PriorityChip extends StatelessWidget {
-  const _PriorityChip(
-      {required this.label, required this.fg, required this.bg});
+  const _PriorityChip({
+    required this.label,
+    required this.fg,
+    required this.bg,
+  });
 
   final String label;
   final Color fg;
@@ -361,9 +730,14 @@ class _PriorityChip extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 10.5, fontWeight: FontWeight.w700, color: fg)),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
+      ),
     );
   }
 }
@@ -390,38 +764,6 @@ class _DoneCheckbox extends StatelessWidget {
       child: done
           ? const Icon(Icons.check, size: 12, color: Colors.white)
           : null,
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// "I fell behind" CTA
-// ---------------------------------------------------------------------------
-
-class _BehindButton extends StatelessWidget {
-  const _BehindButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: () {
-          // TODO: wire to re-planning route (screen-replan).
-        },
-        icon: const Icon(Icons.warning_amber_rounded, size: 16),
-        label: const Text('I fell behind — rebuild my week',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.priorityHighBg,
-          foregroundColor: AppColors.priorityHigh,
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
     );
   }
 }

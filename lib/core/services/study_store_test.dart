@@ -8,19 +8,30 @@ void main() {
 
   setUp(() => StudyStore.tasks.value = const []);
 
-  test('undated and past assignments are skipped', () {
-    final out = StudyStore.blocksFrom([
-      const ExtractedAssignment(title: 'a', type: 'exam'),
-      ExtractedAssignment(
-          title: 'b', type: 'exam', dueDate: DateTime(2026, 9, 1)),
-    ], now: now);
-    expect(out, isEmpty);
-  });
+  test(
+    'undated assignments are skipped and overdue assignments surface today',
+    () {
+      final out = StudyStore.blocksFrom([
+        const ExtractedAssignment(title: 'a', type: 'exam'),
+        ExtractedAssignment(
+          title: 'b',
+          type: 'exam',
+          dueDate: DateTime(2026, 9, 1),
+        ),
+      ], now: now);
+      expect(out, hasLength(1));
+      expect(out.single.date, now);
+      expect(out.single.title, contains('Overdue: Prep: b'));
+    },
+  );
 
   test('exam 10 days out: study day before, 90 min, medium priority', () {
     final out = StudyStore.blocksFrom([
       ExtractedAssignment(
-          title: 'Final', type: 'exam', dueDate: DateTime(2026, 10, 11)),
+        title: 'Final',
+        type: 'exam',
+        dueDate: DateTime(2026, 10, 11),
+      ),
     ], now: now);
     expect(out.single.date, DateTime(2026, 10, 10));
     expect(out.single.timeRange, contains('90 min'));
@@ -34,7 +45,11 @@ void main() {
     expect(today.single.priority, TaskPriority.critical);
     final heavy = StudyStore.blocksFrom([
       ExtractedAssignment(
-          title: 'y', type: 'project', weight: 0.3, dueDate: DateTime(2026, 10, 5)),
+        title: 'y',
+        type: 'project',
+        weight: 0.3,
+        dueDate: DateTime(2026, 10, 5),
+      ),
     ], now: now);
     expect(heavy.single.priority, TaskPriority.critical);
   });
@@ -48,8 +63,16 @@ void main() {
 
   test('add sorts by date and toggle flips done', () {
     final a = StudyStore.blocksFrom([
-      ExtractedAssignment(title: 'late', type: 'exam', dueDate: DateTime(2026, 10, 20)),
-      ExtractedAssignment(title: 'soon', type: 'exam', dueDate: DateTime(2026, 10, 3)),
+      ExtractedAssignment(
+        title: 'late',
+        type: 'exam',
+        dueDate: DateTime(2026, 10, 20),
+      ),
+      ExtractedAssignment(
+        title: 'soon',
+        type: 'exam',
+        dueDate: DateTime(2026, 10, 3),
+      ),
     ], now: now);
     StudyStore.add(a);
     expect(StudyStore.tasks.value.first.title, contains('soon'));

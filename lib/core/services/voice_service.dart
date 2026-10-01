@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+
 import '../models/material_models.dart';
 
 /// Runs on-device OCR using Google ML Kit's text recognizer.
@@ -15,8 +20,9 @@ import '../models/material_models.dart';
 ///   before it ever reaches the LLM — this is what keeps JSON parse/field
 ///   errors low downstream.
 class OcrService {
-  final TextRecognizer _recognizer =
-      TextRecognizer(script: TextRecognitionScript.latin);
+  final TextRecognizer _recognizer = TextRecognizer(
+    script: TextRecognitionScript.latin,
+  );
 
   /// Extracts text from a photo of a syllabus, notes page, or slide.
   Future<RawMaterial> extractFromImage(
@@ -65,4 +71,81 @@ class OcrService {
   void dispose() {
     _recognizer.close();
   }
+}
+
+class VoiceService {
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _initialized = false;
+
+  Future<bool> initialize() async {
+    if (_initialized) return true;
+    _initialized = await _speech.initialize(
+      onError: (error) => debugPrint('Speech error: ${error.errorMsg}'),
+      onStatus: (status) => debugPrint('Speech status: $status'),
+    );
+    return _initialized;
+  }
+
+  Future<RawMaterial> listenAndTranscribe({
+    String? courseId,
+    void Function(String partialText)? onPartialResult,
+    Duration maxDuration = const Duration(minutes: 3),
+  }) async {
+    if (!await initialize()) {
+      throw StateError(
+        'Speech recognition is unavailable. Check microphone permission and device support.',
+      );
+    }
+
+    final completer = _TranscriptCompleter();
+    await _speech.listen(
+      onResult: (SpeechRecognitionResult result) {
+        onPartialResult?.call(result.recognizedWords);
+        if (result.finalResult) {
+          completer.complete(result.recognizedWords, result.confidence);
+        }
+      },
+      listenOptions: stt.SpeechListenOptions(
+        listenFor: maxDuration,
+        pauseFor: const Duration(seconds: 3),
+        partialResults: true,
+        cancelOnError: true,
+      ),
+    );
+
+    final transcript = await completer.future;
+    await _speech.stop();
+    return RawMaterial(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      source: MaterialSource.voice,
+      courseId: courseId,
+      extractedText: transcript.text,
+      confidence: transcript.confidence > 0 ? transcript.confidence : 0.5,
+      capturedAt: DateTime.now(),
+    );
+  }
+
+  Future<void> stop() => _speech.stop();
+  Future<void> cancel() => _speech.cancel();
+  bool get isListening => _speech.isListening;
+}
+
+class _TranscriptResult {
+  const _TranscriptResult(this.text, this.confidence);
+
+  final String text;
+  final double confidence;
+}
+
+class _TranscriptCompleter {
+  final Completer<_TranscriptResult> _completer =
+      Completer<_TranscriptResult>();
+
+  void complete(String text, double confidence) {
+    if (!_completer.isCompleted) {
+      _completer.complete(_TranscriptResult(text, confidence));
+    }
+  }
+
+  Future<_TranscriptResult> get future => _completer.future;
 }

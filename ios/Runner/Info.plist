@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>KlugMind uses the microphone to dictate study notes and tasks.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>KlugMind converts dictated notes and task titles into text.</string>
     <key>NSCameraUsageDescription</key>
     <string>KlugMind needs camera access to photograph your syllabus.</string>
     <key>NSPhotoLibraryUsageDescription</key>

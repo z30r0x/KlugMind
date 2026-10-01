@@ -1,10 +1,10 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:klugmind/core/models/material_models.dart';
-import 'package:klugmind/core/services/video_service.dart';
+import 'package:klugmind/core/services/voice_service.dart';
 
 import 'llm_service.dart';
-import 'voice_service.dart';
 
 /// Single entry point the UI talks to. Wraps the three-stage pipeline:
 ///
@@ -28,16 +28,18 @@ class MaterialAnalysisService {
     required LlmService llmService,
     OcrService? ocrService,
     VoiceService? voiceService,
-  })  : _llm = llmService,
-        _ocr = ocrService ?? OcrService(),
-        _voice = voiceService ?? VoiceService();
+  }) : _llm = llmService,
+       _ocr = ocrService ?? OcrService(),
+       _voice = voiceService ?? VoiceService();
 
   /// Analyze a photographed syllabus/notes page end to end.
   /// Returns both the raw OCR text (for the editable preview step) and
   /// the structured extraction, so the UI can show the preview first and
   /// let the user confirm/edit before committing to the database.
-  Future<(RawMaterial raw, StructuredExtraction structured)>
-      analyzePhoto(File imageFile, {String? courseId}) async {
+  Future<(RawMaterial raw, StructuredExtraction structured)> analyzePhoto(
+    File imageFile, {
+    String? courseId,
+  }) async {
     final raw = await _ocr.extractFromImage(imageFile, courseId: courseId);
     final structured = await _llm.structureMaterial(raw);
     return (raw, structured);
@@ -69,5 +71,6 @@ class MaterialAnalysisService {
 
   void dispose() {
     _ocr.dispose();
+    unawaited(_voice.cancel());
   }
 }

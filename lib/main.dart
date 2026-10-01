@@ -1,11 +1,13 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:klugmind/core/widgets/theme_controller.dart';
 import 'package:klugmind/features/home_page/home.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FlutterGemma.initialize();
   try {
     await dotenv.load(fileName: '.env');
   } catch (_) {

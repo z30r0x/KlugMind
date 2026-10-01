@@ -5,20 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:klugmind/core/models/material_models.dart';
+import 'package:klugmind/core/services/course_store.dart';
 import 'package:klugmind/core/services/study_intake_service.dart';
 import 'package:klugmind/core/utils/styles/colors.dart';
 import 'package:klugmind/core/utils/styles/fonts.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
 import 'package:klugmind/features/notes_page/notes.dart';
 import 'package:klugmind/features/onboarding_page/onboarding.dart';
-
-class Course {
-  final String id;
-  final String name;
-  final Color dotColor;
-  const Course(
-      {required this.id, required this.name, required this.dotColor});
-}
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -28,19 +21,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final List<Course> _courses = [
-    Course(
-        id: '1',
-        name: 'Organic Chemistry II',
-        dotColor: AppColors.courseColor(0)),
-    Course(id: '2', name: 'Linear Algebra', dotColor: AppColors.courseColor(1)),
-    Course(
-        id: '3',
-        name: 'US History 1865–Present',
-        dotColor: AppColors.courseColor(2)),
-  ];
-  int _nextColorIndex = 3;
-
   String? _pastedSyllabusText;
   PlatformFile? _uploadedFile;
   XFile? _capturedPhoto;
@@ -52,9 +32,20 @@ class _HomePageState extends State<HomePage> {
   int _job = 0; // guards against out-of-order async results
 
   @override
+  void initState() {
+    super.initState();
+    CourseStore.courses.addListener(_onCoursesChanged);
+  }
+
+  @override
   void dispose() {
+    CourseStore.courses.removeListener(_onCoursesChanged);
     _intake.dispose();
     super.dispose();
+  }
+
+  void _onCoursesChanged() {
+    if (mounted) setState(() {});
   }
 
   /// Runs PDF text extraction / OCR and stores the result in [_raw].
@@ -71,8 +62,9 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       if (!mounted || job != _job) return;
       setState(() => _extracting = false);
-      final msg =
-          e is FormatException ? e.message : 'Could not read that file.';
+      final msg = e is FormatException
+          ? e.message
+          : 'Could not read that file.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
@@ -81,44 +73,38 @@ class _HomePageState extends State<HomePage> {
     final name = await _promptCourseName(context);
     if (!mounted) return;
     if (name == null || name.trim().isEmpty) return;
-    setState(() {
-      _courses.add(Course(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        name: name.trim(),
-        dotColor: AppColors.courseColor(_nextColorIndex++),
-      ));
-    });
+    if (!CourseStore.add(name)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('That course is already on your list.')),
+      );
+    }
   }
 
-  void _removeCourse(String id) {
-    setState(() => _courses.removeWhere((c) => c.id == id));
-  }
+  void _removeCourse(String id) => CourseStore.remove(id);
 
   Future<String?> _promptCourseName(BuildContext context) async {
-    final controller = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Add a course'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'Course name'),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel')),
-            TextButton(
-                onPressed: () => Navigator.of(ctx).pop(controller.text),
-                child: const Text('Add')),
-          ],
+    var name = '';
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add a course'),
+        content: TextField(
+          autofocus: true,
+          onChanged: (value) => name = value,
+          decoration: const InputDecoration(hintText: 'Course name'),
         ),
-      );
-    } finally {
-      controller.dispose();
-    }
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(name),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openPasteTextCard() async {
@@ -144,8 +130,9 @@ class _HomePageState extends State<HomePage> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(controller.text),
               child: const Text('Save'),
@@ -193,14 +180,16 @@ class _HomePageState extends State<HomePage> {
       });
       final path = file.path;
       if (path == null) return;
-      _extract(() => path.toLowerCase().endsWith('.pdf')
-          ? _intake.fromPdf(path)
-          : _intake.fromPhoto(File(path)));
+      _extract(
+        () => path.toLowerCase().endsWith('.pdf')
+            ? _intake.fromPdf(path)
+            : _intake.fromPhoto(File(path)),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open file picker: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open file picker: $e')));
     }
   }
 
@@ -222,18 +211,18 @@ class _HomePageState extends State<HomePage> {
       _extract(() => _intake.fromPhoto(File(photo.path)));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open camera: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open camera: $e')));
     }
   }
 
   void _generateFlashcards() {
     final raw = _raw;
     if (raw == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => NotesPage(initialRaw: raw)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => NotesPage(initialRaw: raw)));
   }
 
   void _continue() {
@@ -245,8 +234,9 @@ class _HomePageState extends State<HomePage> {
   String? get _syllabusStatusLabel {
     final pasted = _pastedSyllabusText;
     if (pasted != null) {
-      final preview =
-          pasted.length > 40 ? '${pasted.substring(0, 40)}…' : pasted;
+      final preview = pasted.length > 40
+          ? '${pasted.substring(0, 40)}…'
+          : pasted;
       return 'Pasted text saved: "$preview"';
     }
     if (_uploadedFile != null) return 'File selected: ${_uploadedFile!.name}';
@@ -258,53 +248,66 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     AppColors.sync(context);
     final status = _syllabusStatusLabel;
+    final courses = CourseStore.courses.value;
 
     return Scaffold(
       backgroundColor: AppColors.bgApp,
       body: SafeArea(
         child: Column(
           children: [
-            // Step 1 of 2: Home (course setup) -> Today's Plan.
-            PageTopBar(currentStep: 0),
+            PageTopBar(currentStep: 0, totalSteps: 3),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Set up KlugMind',
-                        style: Fonts.h1Lg.copyWith(color: AppColors.textMain)),
+                    Text(
+                      'Set up KlugMind',
+                      style: Fonts.h1Lg.copyWith(color: AppColors.textMain),
+                    ),
                     const SizedBox(height: 6),
-                    Text('Add your courses so we can build your plan',
-                        style: Fonts.sub.copyWith(color: AppColors.textDim)),
+                    Text(
+                      'Add your courses so we can build your plan',
+                      style: Fonts.sub.copyWith(color: AppColors.textDim),
+                    ),
                     const SizedBox(height: 22),
-                    Text('Your courses',
-                        style: Fonts.sectionLabel
-                            .copyWith(color: AppColors.textDim)),
+                    Text(
+                      'Your courses',
+                      style: Fonts.sectionLabel.copyWith(
+                        color: AppColors.textDim,
+                      ),
+                    ),
                     const SizedBox(height: 10),
-                    for (final c in _courses)
+                    for (var i = 0; i < courses.length; i++)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: _CourseChip(
-                          key: ValueKey(c.id),
-                          course: c,
-                          onRemove: () => _removeCourse(c.id),
+                          key: ValueKey(courses[i].id),
+                          course: courses[i],
+                          dotColor: AppColors.courseColor(i),
+                          onRemove: () => _removeCourse(courses[i].id),
                         ),
                       ),
-                    if (_courses.isEmpty)
+                    if (courses.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
                           'No courses yet — add one to continue.',
                           style: TextStyle(
-                              fontSize: 12.5, color: AppColors.textFaint),
+                            fontSize: 12.5,
+                            color: AppColors.textFaint,
+                          ),
                         ),
                       ),
                     _AddCourseButton(onTap: _addCourse),
                     const SizedBox(height: 24),
-                    Text('Add a syllabus (optional)',
-                        style: Fonts.sectionLabel
-                            .copyWith(color: AppColors.textDim)),
+                    Text(
+                      'Add a syllabus (optional)',
+                      style: Fonts.sectionLabel.copyWith(
+                        color: AppColors.textDim,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     _SyllabusOptionCard(
                       icon: Icons.description_outlined,
@@ -330,21 +333,29 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.primarySoft,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.check_circle,
-                                size: 16, color: AppColors.primary),
+                            Icon(
+                              Icons.check_circle,
+                              size: 16,
+                              color: AppColors.primary,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(status,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.onPrimaryContainer)),
+                              child: Text(
+                                status,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.onPrimaryContainer,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -355,9 +366,11 @@ class _HomePageState extends State<HomePage> {
                           width: double.infinity,
                           child: FilledButton(
                             onPressed: _extracting ? null : _generateFlashcards,
-                            child: Text(_extracting
-                                ? 'Reading text…'
-                                : '✨ Generate flashcards'),
+                            child: Text(
+                              _extracting
+                                  ? 'Reading text…'
+                                  : '✨ Generate flashcards',
+                            ),
                           ),
                         ),
                       ],
@@ -371,7 +384,7 @@ class _HomePageState extends State<HomePage> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _courses.isEmpty ? null : _continue,
+                  onPressed: courses.isEmpty ? null : _continue,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: AppColors.onPrimary,
@@ -380,11 +393,13 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.symmetric(vertical: 15),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Continue to Plan',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                  child: const Text(
+                    'Continue to Plan',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
                 ),
               ),
             ),
@@ -396,8 +411,14 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _CourseChip extends StatelessWidget {
-  const _CourseChip({super.key, required this.course, required this.onRemove});
-  final Course course;
+  const _CourseChip({
+    super.key,
+    required this.course,
+    required this.dotColor,
+    required this.onRemove,
+  });
+  final AppCourse course;
+  final Color dotColor;
   final VoidCallback onRemove;
 
   @override
@@ -414,16 +435,18 @@ class _CourseChip extends StatelessWidget {
           Container(
             width: 8,
             height: 8,
-            decoration:
-                BoxDecoration(color: course.dotColor, shape: BoxShape.circle),
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(course.name,
-                style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textMain)),
+            child: Text(
+              course.name,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMain,
+              ),
+            ),
           ),
           Semantics(
             button: true,
@@ -457,10 +480,14 @@ class _AddCourseButton extends StatelessWidget {
           backgroundColor: AppColors.primarySoft,
           foregroundColor: AppColors.onPrimaryContainer,
           padding: const EdgeInsets.symmetric(vertical: 13),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
-        child: const Text('+ Add another course',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        child: const Text(
+          '+ Add another course',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
       ),
     );
   }
@@ -510,15 +537,22 @@ class _SyllabusOptionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textMain)),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMain,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(subtitle,
-                        style: TextStyle(
-                            fontSize: 11.5, color: AppColors.textDim)),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textDim,
+                      ),
+                    ),
                   ],
                 ),
               ),

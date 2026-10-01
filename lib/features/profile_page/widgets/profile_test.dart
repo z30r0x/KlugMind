@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:klugmind/core/services/course_store.dart';
 import 'package:klugmind/core/widgets/page_top_bar.dart';
+import 'package:klugmind/core/widgets/step_dots.dart';
 import 'package:klugmind/core/widgets/theme_button.dart';
 import 'package:klugmind/core/widgets/theme_controller.dart';
 import 'package:klugmind/features/profile_page/profile.dart';
 
 void main() {
   tearDown(() => ThemeController.mode.value = ThemeMode.system);
+  setUp(CourseStore.reset);
 
   Widget wrap() => const MaterialApp(home: ProfilePage());
 
@@ -39,10 +42,15 @@ void main() {
     expect(find.text('Weekly progress email'), findsOneWidget);
   });
 
-  testWidgets('shows theme toggle (no step dots) and the 4-tab navbar',
-      (t) async {
+  testWidgets('shows theme-only utility header and the 4-tab navbar', (
+    t,
+  ) async {
     await t.pumpWidget(wrap());
     expect(find.byType(PageTopBar), findsOneWidget);
+    final topBar = t.widget<PageTopBar>(find.byType(PageTopBar));
+    expect(topBar.currentStep, isNull);
+    expect(topBar.totalSteps, 5);
+    expect(find.byType(StepDots), findsNothing);
     expect(find.byType(ThemeButton), findsOneWidget);
     expect(find.text('Today'), findsOneWidget);
     expect(find.text('Notes'), findsOneWidget);
@@ -78,8 +86,7 @@ void main() {
     expect(switchAt(t, 0).value, isTrue);
   });
 
-  testWidgets('study reminders and weekly email switches toggle',
-      (t) async {
+  testWidgets('study reminders and weekly email switches toggle', (t) async {
     await t.pumpWidget(wrap());
     await t.ensureVisible(find.byType(Switch).at(1));
     expect(switchAt(t, 1).value, isTrue);
@@ -91,5 +98,16 @@ void main() {
     await t.tap(find.byType(Switch).at(2));
     await t.pump();
     expect(switchAt(t, 2).value, isFalse);
+  });
+
+  testWidgets('sign out action toggles back to sign in', (t) async {
+    await t.pumpWidget(wrap());
+    await t.ensureVisible(find.text('Sign out'));
+    await t.tap(find.text('Sign out'));
+    await t.pump();
+    expect(find.text('Sign back in'), findsOneWidget);
+    await t.tap(find.text('Sign back in'));
+    await t.pump();
+    expect(find.text('Sign out'), findsOneWidget);
   });
 }

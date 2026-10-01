@@ -9,7 +9,7 @@ import 'package:klugmind/core/widgets/theme_button.dart';
 /// a const instance would skip build() and freeze StepDots' theme colors.
 class PageTopBar extends StatelessWidget {
   // ignore: prefer_const_constructors_in_immutables
-  PageTopBar({super.key, this.currentStep, this.totalSteps = 2});
+  PageTopBar({super.key, this.currentStep, this.totalSteps = 5});
 
   final int? currentStep;
   final int totalSteps;

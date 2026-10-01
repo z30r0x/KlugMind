@@ -13,8 +13,8 @@ import 'voice_service.dart' show OcrService;
 /// Dependencies are lazy so subclasses/tests never touch platform channels.
 class StudyIntakeService {
   StudyIntakeService({LlmService? llm, OcrService? ocr})
-      : _llmOverride = llm,
-        _ocrOverride = ocr;
+    : _llmOverride = llm,
+      _ocrOverride = ocr;
 
   static const int maxChars = 12000;
   static const int maxPdfBytes = 15 * 1024 * 1024;
@@ -22,6 +22,15 @@ class StudyIntakeService {
   /// A 0.5B on-device model has a ~1280-token window. Prompt schema
   /// (~350 tokens) + input + output must fit, so cap the input hard.
   static const int onDeviceMaxChars = 1500;
+
+  static final RegExp _datePattern = RegExp(
+    r'\b(?:(\d{1,2})(?:st|nd|rd|th)?\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)(?:,?\s+(\d{4}))?|(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?|\b(\d{4})-(\d{1,2})-(\d{1,2}))\b',
+    caseSensitive: false,
+  );
+  static final RegExp _eventPattern = RegExp(
+    r'\b(exam|midterm|final|test|quiz|assignment|homework|project|paper|essay)\b',
+    caseSensitive: false,
+  );
 
   final LlmService? _llmOverride;
   final OcrService? _ocrOverride;
@@ -38,7 +47,9 @@ class StudyIntakeService {
     final url = env['OLLAMA_BASE_URL'];
     if (url != null && url.isNotEmpty) {
       return LlmService(
-          baseUrl: url, model: env['OLLAMA_MODEL'] ?? 'qwen2.5:3b');
+        baseUrl: url,
+        model: env['OLLAMA_MODEL'] ?? 'qwen2.5:3b',
+      );
     }
     return OnDeviceLlmService(
       modelUrl: env['MODEL_URL'] ?? '',
@@ -49,7 +60,10 @@ class StudyIntakeService {
   /// Strips control chars (keeps \n, \t), trims, caps length.
   static String sanitize(String input) {
     final cleaned = input
-        .replaceAll(RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'), '')
+        .replaceAll(
+          RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]'),
+          '',
+        )
         .trim();
     return cleaned.length > maxChars ? cleaned.substring(0, maxChars) : cleaned;
   }
@@ -79,7 +93,8 @@ class StudyIntakeService {
     }
     if (text.trim().isEmpty) {
       throw const FormatException(
-          'No selectable text in this PDF. Try taking a photo instead.');
+        'No selectable text in this PDF. Try taking a photo instead.',
+      );
     }
     return RawMaterial(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -95,12 +110,13 @@ class StudyIntakeService {
     final raw = await _ocr.extractFromImage(image);
     if (raw.extractedText.trim().isEmpty) {
       throw const FormatException(
-          'No text found in the photo. Retake it in better light.');
+        'No text found in the photo. Retake it in better light.',
+      );
     }
     return raw;
   }
 
-  Future<StructuredExtraction> analyze(RawMaterial material) {
+  Future<StructuredExtraction> analyze(RawMaterial material) async {
     var clean = sanitize(material.extractedText);
     if (clean.isEmpty) {
       throw const FormatException('Add notes, a PDF, or a photo first.');
@@ -109,12 +125,145 @@ class StudyIntakeService {
     if (small && clean.length > onDeviceMaxChars) {
       clean = clean.substring(0, onDeviceMaxChars);
     }
-    return _llm.structureMaterial(
+    final extraction = await _llm.structureMaterial(
       material.copyWith(extractedText: clean),
       flashcardCount: small ? 5 : 10,
       quizItemCount: small ? 3 : 5,
     );
+    final detected = _extractDatedEvents(clean);
+    if (detected.isEmpty) return extraction;
+
+    final assignments = [...extraction.assignments];
+    for (final event in detected) {
+      final duplicate = assignments.any((assignment) {
+        final existingDate = assignment.dueDate;
+        final eventDate = event.dueDate!;
+        final existingTitle = assignment.title.toLowerCase().trim();
+        final eventTitle = event.title.toLowerCase().trim();
+        return assignment.type == event.type &&
+            existingDate != null &&
+            existingDate.year == eventDate.year &&
+            existingDate.month == eventDate.month &&
+            existingDate.day == eventDate.day &&
+            (existingTitle == eventTitle ||
+                existingTitle.contains(eventTitle) ||
+                eventTitle.contains(existingTitle));
+      });
+      if (!duplicate) assignments.add(event);
+    }
+
+    return StructuredExtraction(
+      assignments: assignments,
+      flashcards: extraction.flashcards,
+      quizItems: extraction.quizItems,
+      usedFallbackRepair: extraction.usedFallbackRepair,
+    );
   }
+
+  static List<ExtractedAssignment> _extractDatedEvents(String text) {
+    final now = DateTime.now();
+    final events = <ExtractedAssignment>[];
+    for (final dateMatch in _datePattern.allMatches(text)) {
+      final dueDate = _dateFromMatch(dateMatch, now);
+      if (dueDate == null) continue;
+
+      final separators = RegExp(
+        r'[\n.!?]',
+      ).allMatches(text.substring(0, dateMatch.start)).toList();
+      final contextStart = separators.isEmpty ? 0 : separators.last.end;
+      final afterDate = text.substring(dateMatch.end);
+      final sentenceEnd = RegExp(r'[\n.!?]').firstMatch(afterDate);
+      final contextEnd = sentenceEnd == null
+          ? text.length
+          : dateMatch.end + sentenceEnd.start;
+      final context = text.substring(contextStart, contextEnd);
+      final eventMatch = _eventPattern.firstMatch(context);
+      if (eventMatch == null) continue;
+
+      final keyword = eventMatch.group(0)!.toLowerCase();
+      final type = switch (keyword) {
+        'exam' || 'midterm' || 'final' || 'test' => 'exam',
+        'quiz' => 'quiz',
+        'project' => 'project',
+        _ => 'assignment',
+      };
+
+      final phrase = text.substring(contextStart, dateMatch.start);
+      final title = phrase
+          .replaceAll(
+            RegExp(
+              r'\b(on|due(?:\s+on)?|by|scheduled\s+for|for)\s*$',
+              caseSensitive: false,
+            ),
+            '',
+          )
+          .replaceAll(_eventPattern, ' ')
+          .replaceAll(RegExp(r'[^\w\s&/-]'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+
+      events.add(
+        ExtractedAssignment(
+          title: title.isEmpty ? _titleForType(type) : title,
+          type: type,
+          dueDate: dueDate,
+          notes: 'Detected from the source text',
+        ),
+      );
+    }
+    return events;
+  }
+
+  static DateTime? _dateFromMatch(RegExpMatch match, DateTime now) {
+    int day;
+    int month;
+    int? year;
+
+    if (match.group(1) != null) {
+      day = int.parse(match.group(1)!);
+      month = _monthNumber(match.group(2)!);
+      year = int.tryParse(match.group(3) ?? '');
+    } else if (match.group(4) != null) {
+      month = _monthNumber(match.group(4)!);
+      day = int.parse(match.group(5)!);
+      year = int.tryParse(match.group(6) ?? '');
+    } else {
+      year = int.parse(match.group(7)!);
+      month = int.parse(match.group(8)!);
+      day = int.parse(match.group(9)!);
+    }
+
+    var date = DateTime(year ?? now.year, month, day);
+    if (date.month != month || date.day != day) return null;
+    if (year == null && date.isBefore(DateTime(now.year, now.month, now.day))) {
+      date = DateTime(now.year + 1, month, day);
+    }
+    return date;
+  }
+
+  static int _monthNumber(String month) =>
+      switch (month.toLowerCase().substring(0, 3)) {
+        'jan' => 1,
+        'feb' => 2,
+        'mar' => 3,
+        'apr' => 4,
+        'may' => 5,
+        'jun' => 6,
+        'jul' => 7,
+        'aug' => 8,
+        'sep' => 9,
+        'oct' => 10,
+        'nov' => 11,
+        'dec' => 12,
+        _ => throw FormatException('Unknown month: $month'),
+      };
+
+  static String _titleForType(String type) => switch (type) {
+    'exam' => 'Exam',
+    'quiz' => 'Quiz',
+    'project' => 'Project',
+    _ => 'Assignment',
+  };
 
   void dispose() {
     _ocrCache?.dispose();

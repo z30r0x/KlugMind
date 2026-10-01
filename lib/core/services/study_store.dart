@@ -11,13 +11,26 @@ class StudyStore {
       ValueNotifier<List<StudyTask>>(const []);
 
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
-  /// One study block per assignment that has a future (or today's) due date.
-  static List<StudyTask> blocksFrom(List<ExtractedAssignment> items,
-      {DateTime? now}) {
+  /// One study block per dated assignment; overdue items are surfaced today.
+  static List<StudyTask> blocksFrom(
+    List<ExtractedAssignment> items, {
+    DateTime? now,
+    String? courseName,
+  }) {
     final n = now ?? DateTime.now();
     final today = DateTime(n.year, n.month, n.day);
     final stamp = DateTime.now().microsecondsSinceEpoch;
@@ -28,8 +41,12 @@ class StudyStore {
       if (d == null) continue;
       final due = DateTime(d.year, d.month, d.day);
       final days = due.difference(today).inDays;
-      if (days < 0) continue; // already past
-      final studyDay = days > 1 ? due.subtract(const Duration(days: 1)) : due;
+      final overdue = days < 0;
+      final studyDay = overdue
+          ? today
+          : days > 1
+          ? due.subtract(const Duration(days: 1))
+          : due;
       final type = a.type.isEmpty ? 'assignment' : a.type;
       final mins = switch (type) {
         'exam' || 'project' => 90,
@@ -37,15 +54,21 @@ class StudyStore {
         _ => 60,
       };
       final prep = type == 'exam' || type == 'quiz';
-      out.add(StudyTask(
-        id: '$stamp-${i++}',
-        timeRange: '${_months[studyDay.month - 1]} ${studyDay.day} · $mins min',
-        title: '${prep ? 'Prep' : 'Work on'}: ${a.title}',
-        courseName:
-            '${type[0].toUpperCase()}${type.substring(1)} due ${_months[due.month - 1]} ${due.day}',
-        priority: _priority(days, a.weight),
-        date: studyDay,
-      ));
+      out.add(
+        StudyTask(
+          id: '$stamp-${i++}',
+          timeRange:
+              '${_months[studyDay.month - 1]} ${studyDay.day} · $mins min',
+          title: overdue
+              ? 'Overdue: ${prep ? 'Prep' : 'Work on'}: ${a.title}'
+              : '${prep ? 'Prep' : 'Work on'}: ${a.title}',
+          courseName: courseName == null || courseName.trim().isEmpty
+              ? '${type[0].toUpperCase()}${type.substring(1)} due ${_months[due.month - 1]} ${due.day}'
+              : '$courseName · ${type[0].toUpperCase()}${type.substring(1)} due ${_months[due.month - 1]} ${due.day}',
+          priority: _priority(overdue ? 0 : days, a.weight),
+          date: studyDay,
+        ),
+      );
     }
     out.sort((x, y) => x.date!.compareTo(y.date!));
     return out;
@@ -55,17 +78,20 @@ class StudyStore {
     var p = daysLeft <= 2
         ? 0
         : daysLeft <= 5
-            ? 1
-            : daysLeft <= 10
-                ? 2
-                : 3;
+        ? 1
+        : daysLeft <= 10
+        ? 2
+        : 3;
     if ((weight ?? 0) >= 0.2 && p > 0) p--; // heavy weight bumps urgency
     return TaskPriority.values[p];
   }
 
   static void add(List<StudyTask> blocks) {
-    final all = [...tasks.value, ...blocks]..sort((a, b) =>
-        (a.date ?? DateTime(2100)).compareTo(b.date ?? DateTime(2100)));
+    final all = [...tasks.value, ...blocks]
+      ..sort(
+        (a, b) =>
+            (a.date ?? DateTime(2100)).compareTo(b.date ?? DateTime(2100)),
+      );
     tasks.value = all;
   }
 

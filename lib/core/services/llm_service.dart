@@ -46,7 +46,10 @@ class LlmService {
     // First pass failed parsing or schema -> fallback repair pass.
     final repaired = await _repairJson(rawResponse);
     if (repaired != null) {
-      final result = _toStructuredExtraction(repaired, usedFallbackRepair: true);
+      final result = _toStructuredExtraction(
+        repaired,
+        usedFallbackRepair: true,
+      );
       if (result != null) return result;
     }
 
@@ -109,11 +112,12 @@ Rules:
 - Today's date is $today. Convert every date you find (including relative
   ones like "next Friday") to an ISO 8601 date. Use null only if no date
   exists.
-- Generate exactly $flashcardCount flashcards and $quizItemCount quiz
-  items from the conceptual content, even if there are zero assignments.
-- If the source text is too sparse or garbled to extract anything
-  meaningful, return empty arrays for all three fields rather than
-  guessing.
+- Generate up to $flashcardCount flashcards and $quizItemCount quiz
+  items when the source contains conceptual study content.
+- If the source only names a dated exam, quiz, assignment, or project,
+  extract it in "assignments" and return empty flashcards and quiz items.
+- If the source is too sparse or garbled to identify either a dated event
+  or conceptual content, return empty arrays for all three fields.
 
 SOURCE TEXT:
 """
@@ -166,7 +170,8 @@ ${material.extractedText}
 
   /// Asks the model to fix its own previous output into valid JSON.
   Future<Map<String, dynamic>?> _repairJson(String brokenOutput) async {
-    final repairPrompt = '''
+    final repairPrompt =
+        '''
 The following text was supposed to be a single valid JSON object but
 failed to parse. Fix it into valid JSON that preserves all the original
 data (do not remove or invent fields). Return ONLY the corrected JSON,
