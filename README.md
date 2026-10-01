@@ -6,7 +6,7 @@
 
 ## 📌 Project Overview
 
-**KlugMind** is an offline-first Flutter study assistant designed to reduce the manual work of organizing academic material. Students can paste a syllabus, dictate notes, upload a PDF, scan a document, or capture a photo; KlugMind extracts the content and structures it into useful study outputs.
+**KlugMind** is an Flutter study assistant designed to reduce the manual work of organizing academic material. Students can paste a syllabus, dictate notes, upload a PDF, scan a document, or capture a photo; KlugMind extracts the content and structures it into useful study outputs.
 
 The application uses OCR, speech-to-text, PDF text extraction, regex-based date recovery, and an LLM pipeline to identify:
 
